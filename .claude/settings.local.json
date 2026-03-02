@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/opt/homebrew/bin/cmake:*)",
+      "Bash(./build/host/examples/host_demo:*)",
+      "Bash(build/host/examples/host_demo/host_demo:*)",
+      "Bash(cmake:*)",
+      "Bash(arm-none-eabi-g++:*)",
+      "Bash(brew install:*)",
+      "Bash(arm-none-eabi-size:*)",
+      "Bash(ctest:*)",
+      "Bash(./build/host/examples/uart_ringbuffer/uart_ringbuffer_demo:*)"
+    ]
+  }
+}

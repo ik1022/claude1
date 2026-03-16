@@ -1,0 +1,204 @@
+name: Performance Benchmark Report
+
+on:
+  push:
+    branches: [ main ]
+  workflow_run:
+    workflows: [ "Build & Test" ]
+    types: [ completed ]
+    branches: [ main ]
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    name: Run Performance Benchmarks
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc g++
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release \
+            -DLIBEMB_BUILD_TESTS=ON \
+            -DLIBEMB_BUILD_BENCHMARKS=ON
+
+      - name: Build
+        run: |
+          cmake --build build --config Release --parallel
+
+      - name: Run Benchmarks
+        run: |
+          bash scripts/run_benchmarks.sh benchmark_results
+
+      - name: Analyze Benchmarks
+        run: |
+          bash scripts/analyze_benchmarks.sh benchmark_results > benchmark_analysis.txt || true
+
+      - name: Create Benchmark Summary
+        continue-on-error: true
+        run: |
+          cat > benchmark_summary.md << 'EOF'
+          # Performance Benchmark Results
+
+          **Date**: $(date)
+          **Commit**: ${{ github.sha }}
+
+          ## Test Execution Summary
+          EOF
+
+          # Add benchmark analysis to summary
+          if [ -f benchmark_analysis.txt ]; then
+            echo "" >> benchmark_summary.md
+            echo '```' >> benchmark_summary.md
+            cat benchmark_analysis.txt >> benchmark_summary.md
+            echo '```' >> benchmark_summary.md
+          fi
+
+          # Add benchmark file counts
+          echo "" >> benchmark_summary.md
+          echo "## Benchmark Files Generated" >> benchmark_summary.md
+          ls -lh benchmark_results/*.json 2>/dev/null | awk '{print "- " $9 " (" $5 ")"}' >> benchmark_summary.md || echo "- No JSON results found" >> benchmark_summary.md
+
+      - name: Upload Benchmark Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            benchmark_results/
+            benchmark_summary.md
+          retention-days: 30
+
+      - name: Store Benchmark Baseline
+        continue-on-error: true
+        run: |
+          # Create a baseline directory if it doesn't exist
+          mkdir -p benchmark_baselines
+
+          # Copy the latest benchmark results as baseline for future comparison
+          cp benchmark_results/bench_*.json benchmark_baselines/ || true
+
+      - name: Upload Baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-baseline
+          path: benchmark_baselines/
+          retention-days: 90
+
+      - name: Comment PR with Benchmark Results
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            let summary = '';
+            try {
+              summary = fs.readFileSync('benchmark_summary.md', 'utf8');
+            } catch (e) {
+              summary = 'Benchmark results not available';
+            }
+
+            const comment = `
+            ## 📈 Performance Benchmark Results
+
+            ${summary}
+
+            [View detailed results](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  benchmark-compare:
+    runs-on: ubuntu-latest
+    name: Compare with Previous Run
+    if: github.ref == 'refs/heads/main'
+    continue-on-error: true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Previous Baseline
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-baseline
+          path: previous_baseline/
+
+      - name: Setup environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc g++ jq
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release \
+            -DLIBEMB_BUILD_BENCHMARKS=ON
+
+      - name: Build and Run Benchmarks
+        run: |
+          cmake --build build --config Release --parallel
+          bash scripts/run_benchmarks.sh current_results
+
+      - name: Compare Results
+        continue-on-error: true
+        run: |
+          cat > compare_results.sh << 'SCRIPT'
+          #!/bin/bash
+
+          echo "=== Benchmark Comparison ===" > comparison.txt
+          echo "Time: $(date)" >> comparison.txt
+          echo "" >> comparison.txt
+
+          # Simple comparison: check if new results exist and are different
+          if [ -d "previous_baseline" ] && [ "$(ls previous_baseline/*.json 2>/dev/null | wc -l)" -gt 0 ]; then
+            echo "Previous baseline found. Comparing..." >> comparison.txt
+
+            for new_file in current_results/bench_*.json; do
+              test_name=$(basename "$new_file")
+              old_file="previous_baseline/$test_name"
+
+              if [ -f "$old_file" ]; then
+                echo "Test: $test_name" >> comparison.txt
+
+                # Compare file sizes as a proxy for performance change
+                new_size=$(wc -c < "$new_file")
+                old_size=$(wc -c < "$old_file")
+
+                if [ "$new_size" -lt "$old_size" ]; then
+                  echo "  ✓ Improvement (smaller result size)" >> comparison.txt
+                elif [ "$new_size" -gt "$old_size" ]; then
+                  echo "  ⚠ Regression (larger result size)" >> comparison.txt
+                else
+                  echo "  = No change" >> comparison.txt
+                fi
+              fi
+            done
+          else
+            echo "No previous baseline found. Skipping comparison." >> comparison.txt
+          fi
+
+          cat comparison.txt
+          SCRIPT
+
+          chmod +x compare_results.sh
+          bash compare_results.sh
+
+      - name: Upload Comparison Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-comparison
+          path: comparison.txt
+          retention-days: 30

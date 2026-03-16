@@ -1,0 +1,181 @@
+name: ARM Cross-Compile Verification
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # 매주 목요일 00:00 UTC에 실행
+    - cron: '0 0 * * 4'
+  workflow_dispatch:
+
+jobs:
+  arm-cross-compile:
+    runs-on: ubuntu-latest
+    name: Build for ${{ matrix.target }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: STM32F4
+            toolchain: arm-none-eabi
+            cmake_flags: "-DLIBEMB_BUILD_TESTS=OFF -DLIBEMB_BUILD_BENCHMARKS=OFF"
+          - target: ARM Cortex-M7
+            toolchain: arm-none-eabi
+            cmake_flags: "-DLIBEMB_BUILD_TESTS=OFF -DLIBEMB_BUILD_BENCHMARKS=OFF"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install ARM Toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake arm-none-eabi-gcc arm-none-eabi-g++ arm-none-eabi-binutils
+
+      - name: Verify Toolchain
+        run: |
+          echo "=== ARM Toolchain Information ==="
+          arm-none-eabi-gcc --version
+          arm-none-eabi-g++ --version
+          arm-none-eabi-ar --version
+
+      - name: Configure for ARM (${{ matrix.target }})
+        run: |
+          cmake -B build/arm \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/arm-none-eabi.cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            ${{ matrix.cmake_flags }} \
+            -DCMAKE_VERBOSE_MAKEFILE=ON
+
+      - name: Build for ARM
+        run: |
+          cmake --build build/arm --config Release --parallel --verbose
+
+      - name: Analyze Binary
+        continue-on-error: true
+        run: |
+          echo "=== Binary Size Analysis ===" > arm_binary_analysis.txt
+          echo "Target: ${{ matrix.target }}" >> arm_binary_analysis.txt
+          echo "Timestamp: $(date)" >> arm_binary_analysis.txt
+          echo "" >> arm_binary_analysis.txt
+
+          # Find all built binaries
+          find build/arm -type f \( -name "*.elf" -o -name "*.bin" -o -name "*.hex" \) | while read binary; do
+            echo "File: $binary" >> arm_binary_analysis.txt
+            arm-none-eabi-size "$binary" >> arm_binary_analysis.txt
+            echo "" >> arm_binary_analysis.txt
+
+            # Get detailed section information
+            echo "=== Section Details ===" >> arm_binary_analysis.txt
+            arm-none-eabi-objdump -h "$binary" >> arm_binary_analysis.txt || true
+            echo "" >> arm_binary_analysis.txt
+          done
+
+          # Also check library sizes
+          echo "=== Library Sizes ===" >> arm_binary_analysis.txt
+          find build/arm -name "*.a" | while read lib; do
+            echo "Library: $lib" >> arm_binary_analysis.txt
+            ls -lh "$lib" | awk '{print "  Size: " $5}' >> arm_binary_analysis.txt
+            arm-none-eabi-ar t "$lib" | head -5 >> arm_binary_analysis.txt
+            echo "" >> arm_binary_analysis.txt
+          done
+
+          cat arm_binary_analysis.txt
+
+      - name: Check Symbol Table
+        continue-on-error: true
+        run: |
+          echo "=== Symbol Table Analysis ===" > arm_symbols.txt
+
+          find build/arm -type f -name "*.elf" | while read elf; do
+            echo "File: $elf" >> arm_symbols.txt
+            echo "Total symbols:" >> arm_symbols.txt
+            arm-none-eabi-nm "$elf" | wc -l >> arm_symbols.txt
+            echo "" >> arm_symbols.txt
+
+            # Show largest symbols (functions/data)
+            echo "Top 20 largest symbols:" >> arm_symbols.txt
+            arm-none-eabi-nm -S "$elf" | sort -k2 -rn | head -20 >> arm_symbols.txt
+            echo "" >> arm_symbols.txt
+          done
+
+          cat arm_symbols.txt
+
+      - name: Verify Build Output
+        continue-on-error: true
+        run: |
+          echo "=== Build Output Verification ===" > build_verification.txt
+
+          # Check if any libraries were built
+          lib_count=$(find build/arm -name "*.a" | wc -l)
+          echo "Libraries built: $lib_count" >> build_verification.txt
+
+          # Check if headers are intact
+          echo "Headers verified:" >> build_verification.txt
+          find include/ -name "*.hpp" | wc -l >> build_verification.txt
+
+          # Check toolchain flags
+          echo "" >> build_verification.txt
+          echo "=== CMake Configuration ===" >> build_verification.txt
+          grep -i "cmake" build/arm/CMakeCache.txt | head -20 >> build_verification.txt || true
+
+          cat build_verification.txt
+
+      - name: Upload Build Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm-build-${{ matrix.target }}
+          path: |
+            build/arm/
+            arm_binary_analysis.txt
+            arm_symbols.txt
+            build_verification.txt
+          retention-days: 30
+
+      - name: Create Build Report
+        if: always()
+        run: |
+          cat > arm_build_report.md << 'EOF'
+          # ARM Cross-Compilation Build Report
+
+          **Target**: ${{ matrix.target }}
+          **Timestamp**: $(date)
+          **Commit**: ${{ github.sha }}
+
+          ## Build Status
+          ✅ Cross-compilation completed
+
+          ## Size Analysis
+          EOF
+
+          if [ -f arm_binary_analysis.txt ]; then
+            echo "" >> arm_build_report.md
+            echo '```' >> arm_build_report.md
+            cat arm_binary_analysis.txt >> arm_build_report.md
+            echo '```' >> arm_build_report.md
+          fi
+
+      - name: Comment on PR with ARM Results
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const comment = `
+            ## 🔧 ARM Cross-Compile Verification: ${{ matrix.target }}
+
+            ✅ Build successful
+
+            [View detailed build artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });

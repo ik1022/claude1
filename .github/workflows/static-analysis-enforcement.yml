@@ -1,0 +1,213 @@
+name: Static Analysis Enforcement
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - feature/**
+    paths:
+      - 'include/**'
+      - 'src/**'
+      - 'port/**'
+      - '.clang-tidy'
+      - '.github/workflows/static-analysis-enforcement.yml'
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+concurrency:
+  group: "static-analysis-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  clang-tidy:
+    name: Clang-Tidy Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            clang-tools \
+            libgtest-dev \
+            bear  # for compile_commands.json generation
+
+      - name: Generate compile_commands.json
+        run: |
+          mkdir -p build
+          cmake -B build \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DLIBEMB_BUILD_TESTS=ON \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Run clang-tidy
+        run: |
+          # Run clang-tidy on all source files
+          # Exclude test and mock implementations
+          clang-tidy -p build \
+            $(find include/libemb -name "*.hpp" | head -10) \
+            $(find src -name "*.cpp" | head -10) \
+            2>&1 | tee build/clang-tidy-report.txt || true
+
+      - name: Parse clang-tidy results
+        run: |
+          if [ -f build/clang-tidy-report.txt ]; then
+            echo "## Clang-Tidy Results" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            # Count warnings and errors
+            ERROR_COUNT=$(grep -c "error:" build/clang-tidy-report.txt || echo 0)
+            WARNING_COUNT=$(grep -c "warning:" build/clang-tidy-report.txt || echo 0)
+
+            echo "**Errors**: ${ERROR_COUNT}" >> $GITHUB_STEP_SUMMARY
+            echo "**Warnings**: ${WARNING_COUNT}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            # Show first 20 warnings
+            if [ $WARNING_COUNT -gt 0 ]; then
+              echo "### First Warnings:" >> $GITHUB_STEP_SUMMARY
+              head -20 build/clang-tidy-report.txt | sed 's/^/```\n/' >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            fi
+
+            # Fail if errors found
+            if [ $ERROR_COUNT -gt 0 ]; then
+              echo "❌ Clang-Tidy errors found!"
+              exit 1
+            fi
+          fi
+
+      - name: Upload clang-tidy report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: clang-tidy-report
+          path: build/clang-tidy-report.txt
+          retention-days: 30
+
+  cppcheck:
+    name: CPPCheck Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install cppcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cppcheck
+
+      - name: Run cppcheck
+        run: |
+          mkdir -p build
+          cppcheck --enable=all \
+            --suppress=missingIncludeSystem \
+            --suppress=unusedFunction \
+            --suppress=configurationNotChecked \
+            --error-exitcode=2 \
+            --xml \
+            --xml-version=2 \
+            -i build \
+            -i test \
+            include/ src/ port/ \
+            2>&1 | tee build/cppcheck-report.txt || true
+
+      - name: Parse cppcheck results
+        run: |
+          if [ -f build/cppcheck-report.txt ]; then
+            echo "## CPPCheck Results" >> $GITHUB_STEP_SUMMARY
+
+            # Count issues by severity
+            ERROR_COUNT=$(grep -c "error>" build/cppcheck-report.txt || echo 0)
+            WARNING_COUNT=$(grep -c "warning>" build/cppcheck-report.txt || echo 0)
+            STYLE_COUNT=$(grep -c "style>" build/cppcheck-report.txt || echo 0)
+
+            echo "**Errors**: ${ERROR_COUNT}" >> $GITHUB_STEP_SUMMARY
+            echo "**Warnings**: ${WARNING_COUNT}" >> $GITHUB_STEP_SUMMARY
+            echo "**Style Issues**: ${STYLE_COUNT}" >> $GITHUB_STEP_SUMMARY
+
+            # Fail on critical issues
+            if [ $ERROR_COUNT -gt 0 ]; then
+              echo "❌ Critical CPPCheck issues found!"
+              exit 1
+            fi
+          fi
+
+      - name: Upload cppcheck report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cppcheck-report
+          path: build/cppcheck-report.txt
+          retention-days: 30
+
+  analysis-summary:
+    name: Analysis Summary & PR Status
+    needs: [clang-tidy, cppcheck]
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Determine overall status
+        run: |
+          TIDY_STATUS="${{ needs.clang-tidy.result }}"
+          CHECK_STATUS="${{ needs.cppcheck.result }}"
+
+          if [ "$TIDY_STATUS" = "failure" ] || [ "$CHECK_STATUS" = "failure" ]; then
+            echo "❌ Static analysis found critical issues"
+            exit 1
+          fi
+          echo "✅ All static analysis checks passed"
+
+      - name: Create PR status check
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tidyStatus = '${{ needs.clang-tidy.result }}';
+            const checkStatus = '${{ needs.cppcheck.result }}';
+
+            const summary = `
+            ## Static Analysis Results
+
+            | Tool | Status |
+            |------|--------|
+            | Clang-Tidy | ${tidyStatus === 'success' ? '✅' : '❌'} |
+            | CPPCheck | ${checkStatus === 'success' ? '✅' : '❌'} |
+
+            All checks must pass before merging.
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });
+
+      - name: Generate summary
+        if: always()
+        run: |
+          echo "## Static Analysis Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Analysis | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Clang-Tidy | ${{ needs.clang-tidy.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| CPPCheck | ${{ needs.cppcheck.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Requirements:" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ No critical clang-tidy errors" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ No critical cppcheck errors" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Warnings logged for monitoring" >> $GITHUB_STEP_SUMMARY

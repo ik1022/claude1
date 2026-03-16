@@ -4,21 +4,25 @@ namespace libemb::hal {
 
 /**
  * @brief GPIO 핀 모드 열거형
+ *
+ * MCU GPIO 핀의 동작 모드를 정의합니다.
  */
 enum class GpioMode {
-    INPUT,
-    OUTPUT,
-    INPUT_PULLUP,
-    INPUT_PULLDOWN,
-    ANALOG,
+    INPUT,          ///< 입력 모드 (플로팅)
+    OUTPUT,         ///< 출력 모드
+    INPUT_PULLUP,   ///< 내부 풀업 저항을 가진 입력 모드
+    INPUT_PULLDOWN, ///< 내부 풀다운 저항을 가진 입력 모드
+    ANALOG,         ///< 아날로그 모드 (ADC 입력 등)
 };
 
 /**
  * @brief GPIO 핀 상태 열거형
+ *
+ * GPIO 핀의 디지털 출력/입력 상태를 나타냅니다.
  */
 enum class GpioState {
-    LOW = 0,
-    HIGH = 1,
+    LOW = 0,  ///< 낮은 논리 상태 (0V)
+    HIGH = 1, ///< 높은 논리 상태 (Vcc)
 };
 
 /**

@@ -1,0 +1,149 @@
+name: Build & Test
+
+on:
+  push:
+    branches: [ main, 'claude/**' ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # 매주 월요일 00:00 UTC에 실행
+    - cron: '0 0 * * 1'
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - name: "Host Build (GCC, No ASAN)"
+            cmake_flags: "-DLIBEMB_BUILD_TESTS=ON -DLIBEMB_BUILD_BENCHMARKS=ON -DLIBEMB_ENABLE_COVERAGE=ON"
+          - name: "Host Build (GCC, with ASAN)"
+            cmake_flags: "-DLIBEMB_BUILD_TESTS=ON -DLIBEMB_BUILD_BENCHMARKS=OFF -DLIBEMB_ENABLE_ASAN=ON"
+
+    name: ${{ matrix.config.name }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc g++ lcov
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release ${{ matrix.config.cmake_flags }}
+
+      - name: Build
+        run: |
+          cmake --build build --config Release --parallel
+
+      - name: Run Unit Tests
+        run: |
+          cd build
+          ctest --output-on-failure --verbose
+
+      - name: Generate Coverage Report
+        if: contains(matrix.config.cmake_flags, 'COVERAGE=ON')
+        run: |
+          bash scripts/generate_coverage.sh build
+
+      - name: Check Coverage Threshold
+        if: contains(matrix.config.cmake_flags, 'COVERAGE=ON')
+        run: |
+          bash scripts/check_coverage.sh coverage_report/coverage.info
+
+      - name: Run Benchmarks
+        if: contains(matrix.config.cmake_flags, 'BENCHMARKS=ON')
+        continue-on-error: true
+        run: |
+          bash scripts/run_benchmarks.sh benchmark_results
+
+      - name: Analyze Benchmarks
+        if: contains(matrix.config.cmake_flags, 'BENCHMARKS=ON')
+        continue-on-error: true
+        run: |
+          bash scripts/analyze_benchmarks.sh benchmark_results
+
+      - name: Upload Coverage Report
+        if: contains(matrix.config.cmake_flags, 'COVERAGE=ON') && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-${{ matrix.config.name }}
+          path: coverage_report/
+          retention-days: 30
+
+      - name: Upload Benchmark Results
+        if: contains(matrix.config.cmake_flags, 'BENCHMARKS=ON') && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ matrix.config.name }}
+          path: benchmark_results/
+          retention-days: 30
+
+      - name: Upload Build Logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ matrix.config.name }}
+          path: build/
+          retention-days: 7
+
+  cross-compile:
+    runs-on: ubuntu-latest
+    name: ARM Cross-Compile Test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup ARM toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake arm-none-eabi-gcc arm-none-eabi-g++ arm-none-eabi-binutils
+
+      - name: Configure for ARM
+        run: |
+          cmake -B build/arm \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/arm-none-eabi.cmake \
+            -DLIBEMB_BUILD_TESTS=OFF
+
+      - name: Build for ARM
+        run: |
+          cmake --build build/arm --config Release
+
+      - name: Analyze Binary Size
+        run: |
+          find build/arm -name "*.elf" -o -name "*.bin" | xargs -I {} sh -c 'echo "=== {} ===" && arm-none-eabi-size {}'
+
+  lint:
+    runs-on: ubuntu-latest
+    name: Code Quality Checks
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc g++ cppcheck
+
+      - name: Run cppcheck
+        continue-on-error: true
+        run: |
+          cppcheck --enable=all --suppress=missingIncludeSystem \
+            include/ src/ port/ benchmark/ test/ \
+            --report-progress || true
+
+      - name: Check CMake formatting
+        continue-on-error: true
+        run: |
+          # Check for common CMake style issues
+          find . -name "CMakeLists.txt" -o -name "*.cmake" | while read file; do
+            echo "Checking $file"
+            # Add more sophisticated checks as needed
+          done || true

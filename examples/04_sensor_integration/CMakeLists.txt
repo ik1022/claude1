@@ -1,0 +1,1 @@
+add_libemb_example(example_04_sensor_integration main.cpp)

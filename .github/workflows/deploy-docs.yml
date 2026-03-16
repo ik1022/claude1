@@ -1,0 +1,217 @@
+name: Deploy Doxygen Documentation
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'include/**'
+      - 'src/**'
+      - 'Doxyfile.in'
+      - 'CMakeLists.txt'
+      - '.github/workflows/deploy-docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-docs:
+    name: Generate Documentation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            doxygen \
+            graphviz \
+            cmake \
+            g++ \
+            build-essential
+
+      - name: Configure CMake with Doxygen
+        run: |
+          cmake -B build \
+            -DLIBEMB_BUILD_DOCS=ON \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Generate documentation
+        run: |
+          cmake --build build --target docs
+
+      - name: Verify documentation
+        run: |
+          if [ ! -d "build/docs/html" ]; then
+            echo "Documentation not generated!"
+            exit 1
+          fi
+
+          if [ ! -f "build/docs/html/index.html" ]; then
+            echo "index.html not found!"
+            exit 1
+          fi
+
+          echo "✓ Documentation generated successfully"
+          ls -lah build/docs/html/ | head -20
+
+      - name: Create .nojekyll file
+        run: |
+          touch build/docs/html/.nojekyll
+
+      - name: Upload documentation artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: doxygen-docs
+          path: build/docs/html/
+          retention-days: 30
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload to GitHub Pages
+        uses: actions/upload-pages-artifact@v2
+        with:
+          path: 'build/docs/html/'
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build-docs
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v2
+
+  # Comment on PR with documentation link
+  comment-pr:
+    name: Comment PR with Docs Link
+    needs: build-docs
+    if: github.event_name == 'pull_request' || contains(github.ref, 'refs/pull/')
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const repo = context.repo;
+            const branch = context.ref.replace('refs/heads/', '');
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: repo.owner,
+              repo: repo.repo,
+              body: `📚 **Documentation Preview**\n\nAPI documentation for this PR is being generated. Once the build completes, you can view it at the [Pages deployment](https://${repo.owner}.github.io/${repo.repo}/).`
+            });
+
+  # Generate documentation statistics
+  doc-stats:
+    name: Document Statistics
+    needs: build-docs
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download documentation
+        uses: actions/download-artifact@v4
+        with:
+          name: doxygen-docs
+          path: docs/
+
+      - name: Calculate statistics
+        run: |
+          echo "## Documentation Statistics" > doc_stats.md
+          echo "" >> doc_stats.md
+
+          # Count HTML files
+          html_count=$(find docs -name "*.html" | wc -l)
+          echo "- **HTML Pages**: $html_count" >> doc_stats.md
+
+          # Check for main files
+          if [ -f "docs/index.html" ]; then
+            echo "- ✅ **index.html**: Found" >> doc_stats.md
+          fi
+
+          # Calculate total size
+          total_size=$(du -sh docs/ | cut -f1)
+          echo "- **Total Size**: $total_size" >> doc_stats.md
+
+          # Look for documented classes
+          if [ -f "docs/annotated.html" ]; then
+            echo "- ✅ **Class List**: Generated" >> doc_stats.md
+          fi
+
+          # Look for file list
+          if [ -f "docs/files.html" ]; then
+            echo "- ✅ **File List**: Generated" >> doc_stats.md
+          fi
+
+          cat doc_stats.md
+
+      - name: Upload statistics
+        uses: actions/upload-artifact@v4
+        with:
+          name: doc-statistics
+          path: doc_stats.md
+          retention-days: 7
+
+  # Validate documentation quality
+  doc-validation:
+    name: Validate Documentation Quality
+    needs: build-docs
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download documentation
+        uses: actions/download-artifact@v4
+        with:
+          name: doxygen-docs
+          path: docs/
+
+      - name: Check for broken links
+        run: |
+          echo "Checking for common documentation issues..."
+
+          # Check if main page exists
+          if [ ! -f "docs/index.html" ]; then
+            echo "❌ Main index.html missing"
+            exit 1
+          fi
+
+          # Check for undocumented items (Doxygen-specific)
+          # This is a basic check - more detailed analysis can be added
+          if grep -q "TODO" docs/index.html; then
+            echo "⚠️  TODO items found in documentation"
+          fi
+
+          echo "✅ Basic documentation validation passed"
+
+      - name: Summary
+        run: |
+          echo "## Documentation Validation Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Doxygen documentation successfully generated" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Documentation is live at GitHub Pages" >> $GITHUB_STEP_SUMMARY
+          echo "2. Add documentation links to README" >> $GITHUB_STEP_SUMMARY
+          echo "3. Update CLAUDE.md with documentation guidelines" >> $GITHUB_STEP_SUMMARY

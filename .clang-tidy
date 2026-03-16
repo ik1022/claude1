@@ -1,0 +1,55 @@
+---
+Checks: >
+  *,
+  -fuchsia-*,
+  -google-default-arguments,
+  -google-explicit-constructor,
+  -google-readability-casting,
+  -llvm-*,
+  -llvm-header-guard,
+  -readability-else-after-return,
+  -readability-magic-numbers,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-avoid-const-or-ref-data-members,
+  -bugprone-easily-swappable-parameters,
+  -altera-*,
+  -abseil-*
+
+# Treat warnings as errors
+WarningsAsErrors: 'true'
+
+# Check options
+CheckOptions:
+  # Naming conventions for libemb project
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key: readability-identifier-naming.PrivateMemberCase
+    value: lower_case
+  - key: readability-identifier-naming.PrivateMemberSuffix
+    value: '_'
+  - key: readability-identifier-naming.ConstantCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.EnumConstantCase
+    value: CamelCase
+  - key: readability-identifier-naming.FunctionCase
+    value: camelCase
+  - key: readability-identifier-naming.NamespaceCase
+    value: lower_case
+
+  # Performance checks
+  - key: cppcoreguidelines-missing-std-forward
+    value: 'true'
+  - key: readability-function-cognitive-complexity.Threshold
+    value: '20'
+
+  # Format checks
+  - key: readability-braces-around-statements.ShortStatementLines
+    value: '0'
+
+HeaderFilterRegex: '.*/(include|src|port|test|examples)/(libemb|.*)/.*\.(hpp|cpp)'
+
+# Fixes policy
+FormatStyle: LLVM
+
+# Analyze temporary destructors
+AnalyzeTemporaryDtors: 'true'

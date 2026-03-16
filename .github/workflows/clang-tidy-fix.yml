@@ -1,0 +1,279 @@
+name: Clang-Tidy Auto-Fix (Pull Request)
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [ opened, synchronize, reopened ]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  detect-and-fix:
+    runs-on: ubuntu-latest
+    name: Analyze & Suggest Fixes
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc g++ clang clang-tools
+
+      - name: Configure CMake with clang-tidy
+        run: |
+          cmake -B build_fix \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_CXX_CLANG_TIDY="clang-tidy;-checks=*,-fuchsia-*,-google-*,-llvm-*;--fix;--fix-errors" \
+            -DLIBEMB_BUILD_TESTS=ON \
+            -DLIBEMB_BUILD_BENCHMARKS=OFF \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Run build to collect fixes
+        continue-on-error: true
+        run: |
+          mkdir -p clang_tidy_fixes
+          cmake --build build_fix 2>&1 | tee clang_tidy_fixes/fix_output.log || true
+
+      - name: Detect changed files
+        run: |
+          git diff --name-only --diff-filter=M > clang_tidy_fixes/changed_files.txt
+          cat clang_tidy_fixes/changed_files.txt || echo "No files changed"
+
+      - name: Generate diff of fixes
+        run: |
+          git diff > clang_tidy_fixes/fixes.patch
+
+          # Count changes
+          git diff --stat > clang_tidy_fixes/changes_summary.txt
+
+          echo "=== Fix Summary ===" >> clang_tidy_fixes/changes_summary.txt
+          echo "Files modified: $(git diff --name-only | wc -l)" >> clang_tidy_fixes/changes_summary.txt
+          echo "Lines added: $(git diff | grep '^+' | wc -l)" >> clang_tidy_fixes/changes_summary.txt
+          echo "Lines removed: $(git diff | grep '^-' | wc -l)" >> clang_tidy_fixes/changes_summary.txt
+
+      - name: Parse fix categories
+        run: |
+          cat > parse_fixes.py << 'PYTHON'
+          import subprocess
+          import re
+          from pathlib import Path
+
+          # Get warnings from clang-tidy output
+          output = Path('clang_tidy_fixes/fix_output.log').read_text()
+
+          # Parse warnings by category
+          categories = {}
+          lines = output.split('\n')
+
+          for line in lines:
+              if 'warning:' in line:
+                  # Extract check category
+                  match = re.search(r'\[([^\]]+)\]', line)
+                  if match:
+                      category = match.group(1).split('-')[0]  # Get prefix
+                      categories[category] = categories.get(category, 0) + 1
+
+          # Save summary
+          with open('clang_tidy_fixes/fix_categories.txt', 'w') as f:
+              f.write("=== Fixes by Category ===\n\n")
+              for cat in sorted(categories.items(), key=lambda x: x[1], reverse=True):
+                  f.write(f"{cat[0]}: {cat[1]} fixes\n")
+
+          PYTHON
+
+          python3 parse_fixes.py
+
+      - name: Check if fixes were made
+        id: check_fixes
+        run: |
+          if [ -s clang_tidy_fixes/fixes.patch ]; then
+            echo "has_fixes=true" >> $GITHUB_OUTPUT
+            echo "fixes_count=$(grep -c '^@@' clang_tidy_fixes/fixes.patch || echo 0)" >> $GITHUB_OUTPUT
+          else
+            echo "has_fixes=false" >> $GITHUB_OUTPUT
+            echo "fixes_count=0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate fix summary comment
+        if: steps.check_fixes.outputs.has_fixes == 'true'
+        run: |
+          cat > fix_comment.md << 'EOF'
+          ## 🔧 Clang-Tidy Auto-Fix Suggestions
+
+          Found **${{ steps.check_fixes.outputs.fixes_count }}** potential improvements in your code!
+
+          ### Suggested Fixes by Category
+
+          EOF
+
+          if [ -f clang_tidy_fixes/fix_categories.txt ]; then
+            cat clang_tidy_fixes/fix_categories.txt >> fix_comment.md
+          fi
+
+          cat >> fix_comment.md << 'EOF'
+
+          ### Safe Fixes (Can Auto-Apply)
+
+          These fixes are generally safe and can be automatically applied:
+
+          - **modernize-use-nullptr**: Replace NULL with nullptr
+          - **modernize-use-override**: Add override keyword
+          - **modernize-use-auto**: Use auto for type inference
+          - **modernize-use-equals-default**: Use = default
+          - **modernize-use-equals-delete**: Use = delete
+          - **readability-container-size-empty**: Use .empty() instead of .size() == 0
+
+          ### Manual Review Fixes
+
+          These fixes require review before applying:
+
+          - **readability-identifier-naming**: Naming convention changes
+          - **modernize-use-trailing-return-type**: Return type style changes
+          - **performance-***: Performance optimization suggestions
+          - **cppcoreguidelines-***: C++ Core Guidelines recommendations
+
+          ### How to Apply Fixes
+
+          **Option 1: Local Application**
+          ```bash
+          bash scripts/apply_clang_tidy_fixes.sh --dry-run
+          bash scripts/apply_clang_tidy_fixes.sh --apply
+          ```
+
+          **Option 2: Review & Apply Selectively**
+          ```bash
+          bash scripts/apply_clang_tidy_fixes.sh --review
+          ```
+
+          **Option 3: Auto-Apply Safe Fixes Only**
+          ```bash
+          bash scripts/apply_clang_tidy_fixes.sh --safe-only
+          ```
+
+          ### Detailed Patch
+
+          View the complete patch below and apply selectively.
+
+          <details>
+          <summary>Click to expand patch</summary>
+
+          ```patch
+
+          EOF
+
+          if [ -f clang_tidy_fixes/fixes.patch ]; then
+            head -100 clang_tidy_fixes/fixes.patch >> fix_comment.md
+
+            if [ $(wc -l < clang_tidy_fixes/fixes.patch) -gt 100 ]; then
+              echo "... (truncated, see artifacts for full patch)" >> fix_comment.md
+            fi
+          fi
+
+          cat >> fix_comment.md << 'EOF'
+
+          ```
+
+          </details>
+
+          ### Next Steps
+
+          1. Review the suggested fixes in the patch above
+          2. Run locally: `bash scripts/apply_clang_tidy_fixes.sh --review`
+          3. Apply safe fixes or cherry-pick specific changes
+          4. Push updated code
+
+          **More info**: See [Static Analysis Guide](.github/STATIC_ANALYSIS.md) for details on each check.
+
+          EOF
+
+          cat fix_comment.md
+
+      - name: Comment on PR with fixes
+        if: steps.check_fixes.outputs.has_fixes == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const comment = fs.readFileSync('fix_comment.md', 'utf8');
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: Comment if no fixes needed
+        if: steps.check_fixes.outputs.has_fixes == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '✅ **Clang-Tidy Check Passed**\n\nNo code style improvements suggested. Your code follows best practices! 🎉'
+            });
+
+      - name: Upload fix artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clang-tidy-fixes
+          path: clang_tidy_fixes/
+          retention-days: 30
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f clang_tidy_fixes/changes_summary.txt ]; then
+            echo "### Changes Detected" >> $GITHUB_STEP_SUMMARY
+            cat clang_tidy_fixes/changes_summary.txt >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Fix Categories" >> $GITHUB_STEP_SUMMARY
+          if [ -f clang_tidy_fixes/fix_categories.txt ]; then
+            cat clang_tidy_fixes/fix_categories.txt >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No fixes detected" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  verify-no-conflicts:
+    runs-on: ubuntu-latest
+    name: Verify Build Still Works
+    needs: detect-and-fix
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc g++ clang
+
+      - name: Build without fixes
+        run: |
+          cmake -B build_verify \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_BUILD_TYPE=Release
+
+          cmake --build build_verify 2>&1 | tail -20
+
+      - name: Run tests
+        continue-on-error: true
+        run: |
+          ctest --test-dir build_verify --output-on-failure || true

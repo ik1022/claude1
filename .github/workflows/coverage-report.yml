@@ -1,0 +1,105 @@
+name: Code Coverage Report
+
+on:
+  push:
+    branches: [ main ]
+  workflow_run:
+    workflows: [ "Build & Test" ]
+    types: [ completed ]
+    branches: [ main ]
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    name: Generate Coverage Report
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc g++ lcov
+
+      - name: Configure CMake with Coverage
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release \
+            -DLIBEMB_BUILD_TESTS=ON \
+            -DLIBEMB_ENABLE_COVERAGE=ON
+
+      - name: Build
+        run: |
+          cmake --build build --config Release --parallel
+
+      - name: Run Tests for Coverage
+        run: |
+          cd build
+          ctest --output-on-failure
+
+      - name: Generate Coverage Report
+        run: |
+          bash scripts/generate_coverage.sh build
+
+      - name: Check Coverage Threshold
+        run: |
+          bash scripts/check_coverage.sh coverage_report/coverage.info
+
+      - name: Upload Coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage_report/coverage.info
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+          verbose: true
+
+      - name: Create Coverage Badge
+        continue-on-error: true
+        run: |
+          # Extract coverage percentage from lcov output
+          coverage=$(grep -oP '(?<=of lines executed:)\s*\K[0-9.]+' coverage_report/coverage.info | head -1 || echo "0")
+
+          # Create badge JSON (for use with shields.io or similar)
+          echo "{\"schemaVersion\": 1, \"label\": \"coverage\", \"message\": \"${coverage}%\", \"color\": \"brightgreen\"}" > coverage_badge.json
+
+          mkdir -p badge
+          cp coverage_badge.json badge/
+
+      - name: Upload Coverage Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage_report/
+            coverage_badge.json
+          retention-days: 30
+
+      - name: Comment PR with Coverage
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const coverage_info = fs.readFileSync('coverage_report/coverage.info', 'utf8');
+
+            // Parse coverage percentage
+            const match = coverage_info.match(/lines.*?(\d+\.\d+)%/);
+            const coverage = match ? match[1] : 'N/A';
+
+            const comment = `
+            ## 📊 Code Coverage Report
+
+            **Coverage**: ${coverage}%
+
+            [View detailed report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });

@@ -8,11 +8,42 @@ namespace libemb::util {
 /**
  * @brief 동적 할당이 없는 고정 크기 링 버퍼
  *
- * 단일 생산자/단일 소비자에 대해 스레드 안전합니다 (락 없음).
- * 메모리가 제한된 임베디드 시스템에 적합합니다.
+ * 순환(순환) 버퍼 구현으로, 메모리 효율이 높으며 예측 가능한 성능을 제공합니다.
  *
- * @tparam T 요소 타입
- * @tparam N 버퍼 용량
+ * **특징:**
+ * - 스택에 할당되는 고정 크기 배열
+ * - O(1) push/pop 연산
+ * - 동적 메모리 할당 없음 (임베디드 안전)
+ * - 단일 생산자/단일 소비자에 대해 스레드 안전 (락 없음)
+ *
+ * **사용 사례:**
+ * - UART 수신/송신 버퍼
+ * - 센서 데이터 버퍼링
+ * - 이벤트 큐
+ *
+ * @tparam T 요소 타입 (기본 타입, POD 타입 권장)
+ * @tparam N 버퍼 용량 (컴파일 타임 상수)
+ *
+ * @section example 예제:
+ * @code
+ * // 256바이트 UART 수신 버퍼
+ * libemb::util::RingBuffer<uint8_t, 256> rxBuffer;
+ *
+ * // 데이터 추가
+ * for (uint8_t i = 0; i < 10; i++) {
+ *     rxBuffer.push(i);
+ * }
+ *
+ * // 데이터 가져오기
+ * uint8_t val;
+ * while (rxBuffer.pop(val)) {
+ *     printf("Value: %u\n", val);
+ * }
+ *
+ * // 상태 확인
+ * printf("Size: %zu, Full: %s\n", rxBuffer.size(),
+ *        rxBuffer.full() ? "yes" : "no");
+ * @endcode
  */
 template<typename T, size_t N>
 class RingBuffer {

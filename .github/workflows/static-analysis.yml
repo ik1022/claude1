@@ -1,0 +1,306 @@
+name: Static Analysis
+
+on:
+  push:
+    branches: [ main, 'claude/**' ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # 매주 화요일 00:00 UTC에 실행
+    - cron: '0 0 * * 2'
+
+jobs:
+  cppcheck:
+    runs-on: ubuntu-latest
+    name: CPPCheck Analysis
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install cppcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cppcheck
+
+      - name: Run cppcheck
+        continue-on-error: true
+        run: |
+          mkdir -p cppcheck_results
+
+          cppcheck \
+            --enable=all \
+            --suppress=missingIncludeSystem \
+            --suppress=unusedFunction \
+            --suppress=unmatchedSuppression \
+            --std=c++17 \
+            --platform=unix64 \
+            --inline-suppr \
+            --xml \
+            --xml-version=2 \
+            --output-file=cppcheck_results/cppcheck.xml \
+            include/ src/ port/ benchmark/ test/ || true
+
+          # Convert XML to human-readable format
+          cppcheck \
+            --enable=all \
+            --suppress=missingIncludeSystem \
+            --suppress=unusedFunction \
+            --suppress=unmatchedSuppression \
+            --std=c++17 \
+            --platform=unix64 \
+            --inline-suppr \
+            include/ src/ port/ benchmark/ test/ | tee cppcheck_results/cppcheck.txt || true
+
+      - name: Parse cppcheck results
+        continue-on-error: true
+        run: |
+          cat > parse_cppcheck.py << 'PYTHON'
+          import xml.etree.ElementTree as ET
+          import sys
+
+          report = {
+              'errors': 0,
+              'warnings': 0,
+              'style': 0,
+              'performance': 0,
+              'portability': 0,
+              'information': 0
+          }
+
+          try:
+              tree = ET.parse('cppcheck_results/cppcheck.xml')
+              root = tree.getroot()
+
+              issues = []
+              for error in root.findall('.//error'):
+                  severity = error.get('severity', 'unknown')
+                  msg = error.get('msg', '')
+
+                  report[severity] = report.get(severity, 0) + 1
+
+                  # Get file and line info
+                  location = error.find('location')
+                  if location is not None:
+                      file = location.get('file', 'unknown')
+                      line = location.get('line', '0')
+                      issues.append(f"[{severity.upper()}] {file}:{line}: {msg}")
+
+              # Print summary
+              print("=== CPPCheck Results ===")
+              print(f"Errors: {report.get('error', 0)}")
+              print(f"Warnings: {report.get('warning', 0)}")
+              print(f"Style: {report.get('style', 0)}")
+              print(f"Performance: {report.get('performance', 0)}")
+              print(f"Portability: {report.get('portability', 0)}")
+              print(f"Information: {report.get('information', 0)}")
+              print(f"\nTotal issues: {len(issues)}")
+
+              if issues:
+                  print("\nTop 20 issues:")
+                  for issue in issues[:20]:
+                      print(f"  {issue}")
+
+          except Exception as e:
+              print(f"Error parsing results: {e}", file=sys.stderr)
+
+          PYTHON
+
+          python3 parse_cppcheck.py
+
+      - name: Upload cppcheck results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cppcheck-results
+          path: cppcheck_results/
+          retention-days: 30
+
+      - name: Comment on PR with cppcheck results
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            let summary = '';
+            try {
+              summary = fs.readFileSync('cppcheck_results/cppcheck.txt', 'utf8')
+                .split('\n')
+                .slice(0, 50)  // First 50 lines
+                .join('\n');
+            } catch (e) {
+              summary = 'Results not available';
+            }
+
+            const comment = `
+            ## 🔍 CPPCheck Static Analysis
+
+            \`\`\`
+            ${summary}
+            \`\`\`
+
+            [View detailed results](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  clang-tidy:
+    runs-on: ubuntu-latest
+    name: Clang-Tidy Analysis
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc g++ clang clang-tools
+
+      - name: Configure CMake with clang-tidy
+        run: |
+          cmake -B build_tidy \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_CXX_CLANG_TIDY="clang-tidy;-checks=*,-fuchsia-*,-google-*,-llvm-*" \
+            -DLIBEMB_BUILD_TESTS=ON \
+            -DLIBEMB_BUILD_BENCHMARKS=OFF \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Run clang-tidy analysis
+        continue-on-error: true
+        run: |
+          mkdir -p clang_tidy_results
+
+          # Build with clang-tidy checks
+          cmake --build build_tidy 2>&1 | tee clang_tidy_results/clang-tidy.log || true
+
+      - name: Parse clang-tidy warnings
+        continue-on-error: true
+        run: |
+          cat > parse_clang_tidy.py << 'PYTHON'
+          import re
+
+          with open('clang_tidy_results/clang-tidy.log', 'r') as f:
+              content = f.read()
+
+          # Parse warnings
+          warnings = re.findall(r'(\S+:\d+:\d+:.*?\[.*?\])', content)
+
+          print("=== Clang-Tidy Results ===")
+          print(f"Total warnings: {len(warnings)}")
+
+          if warnings:
+              print("\nTop 20 warnings:")
+              for warning in warnings[:20]:
+                  print(f"  {warning}")
+
+          # Count by type
+          types = {}
+          for w in warnings:
+              match = re.search(r'\[([^\]]+)\]', w)
+              if match:
+                  wtype = match.group(1)
+                  types[wtype] = types.get(wtype, 0) + 1
+
+          if types:
+              print("\nWarnings by category:")
+              for wtype in sorted(types.keys(), key=lambda x: types[x], reverse=True)[:10]:
+                  print(f"  {wtype}: {types[wtype]}")
+
+          PYTHON
+
+          python3 parse_clang_tidy.py
+
+      - name: Upload clang-tidy results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clang-tidy-results
+          path: clang_tidy_results/
+          retention-days: 30
+
+      - name: Comment on PR with clang-tidy results
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            let summary = '';
+            try {
+              const log = fs.readFileSync('clang_tidy_results/clang-tidy.log', 'utf8');
+              const lines = log.split('\n').filter(l => l.includes('warning:'));
+              summary = lines.slice(0, 20).join('\n') || 'No warnings found';
+            } catch (e) {
+              summary = 'Results not available';
+            }
+
+            const comment = `
+            ## 🔧 Clang-Tidy Analysis
+
+            \`\`\`
+            ${summary}
+            \`\`\`
+
+            [View detailed results](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  code-quality-summary:
+    runs-on: ubuntu-latest
+    name: Code Quality Summary
+    if: always()
+    needs: [ cppcheck, clang-tidy ]
+
+    steps:
+      - name: Create quality report
+        continue-on-error: true
+        run: |
+          cat > code_quality_report.md << 'EOF'
+          # Code Quality Analysis Report
+
+          **Timestamp**: $(date)
+          **Workflow Run**: ${{ github.run_id }}
+
+          ## Summary
+
+          - CPPCheck: Analysis completed
+          - Clang-Tidy: Analysis completed
+
+          ## Recommendations
+
+          1. **Critical Issues**: Fix immediately
+          2. **High Priority**: Fix before merge
+          3. **Medium Priority**: Fix in follow-up PR
+          4. **Low Priority**: Consider for next sprint
+
+          ## Next Steps
+
+          - Review detailed reports in artifacts
+          - Address findings in pull request
+          - Consider enabling warnings-as-errors mode
+
+          EOF
+
+          cat code_quality_report.md
+
+      - name: Upload quality report
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-quality-report
+          path: code_quality_report.md
+          retention-days: 30

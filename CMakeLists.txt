@@ -14,7 +14,17 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Build options
 option(LIBEMB_BUILD_TESTS "Build unit tests" OFF)
 option(LIBEMB_BUILD_EXAMPLES "Build example applications" OFF)
+option(LIBEMB_BUILD_BENCHMARKS "Build performance benchmarks" OFF)
+option(LIBEMB_BUILD_DOCS "Generate Doxygen documentation" OFF)
 option(LIBEMB_ENABLE_ASAN "Enable AddressSanitizer for host builds" OFF)
+option(LIBEMB_ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
+option(LIBEMB_ENABLE_COVERAGE "Enable code coverage reporting (requires GCC/Clang)" OFF)
+option(LIBEMB_ENABLE_CLANG_TIDY "Enable clang-tidy static analysis" OFF)
+
+# Validation options (Phase 3)
+option(LIBEMB_STRICT_COMPILER_FLAGS "Treat all warnings as errors" OFF)
+option(LIBEMB_ENABLE_EXTRA_WARNINGS "Enable extended compiler warnings" OFF)
+option(LIBEMB_COVERAGE_THRESHOLD "Minimum required code coverage percentage" 80)
 
 # Detect cross-compilation
 if(CMAKE_CROSSCOMPILING)
@@ -32,6 +42,48 @@ if(LIBEMB_ENABLE_ASAN)
     message(STATUS "AddressSanitizer enabled")
 endif()
 
+# UndefinedBehaviorSanitizer configuration (Phase 3)
+if(LIBEMB_ENABLE_UBSAN)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        message(FATAL_ERROR "UndefinedBehaviorSanitizer requires Clang or GCC")
+    endif()
+    add_compile_options(-fsanitize=undefined)
+    add_link_options(-fsanitize=undefined)
+    message(STATUS "UndefinedBehaviorSanitizer enabled")
+endif()
+
+# Code coverage configuration
+if(LIBEMB_ENABLE_COVERAGE)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+        message(FATAL_ERROR "Code coverage requires GCC (not Clang)")
+    endif()
+    if(CMAKE_CROSSCOMPILING)
+        message(FATAL_ERROR "Code coverage not supported for cross-compilation")
+    endif()
+
+    add_compile_options(-fprofile-arcs -ftest-coverage)
+    add_link_options(--coverage)
+    message(STATUS "Code coverage enabled")
+endif()
+
+# Clang-Tidy configuration
+if(LIBEMB_ENABLE_CLANG_TIDY)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(WARNING "Clang-Tidy works best with Clang compiler")
+    endif()
+    if(CMAKE_CROSSCOMPILING)
+        message(WARNING "Clang-Tidy may not work well with cross-compilation")
+    endif()
+
+    find_program(CLANG_TIDY_EXE clang-tidy)
+    if(CLANG_TIDY_EXE)
+        set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE};-checks=*,-fuchsia-*,-google-*,-llvm-*")
+        message(STATUS "Clang-Tidy enabled: ${CLANG_TIDY_EXE}")
+    else()
+        message(WARNING "clang-tidy not found - analysis disabled")
+    endif()
+endif()
+
 # Compiler-specific flags
 if(MSVC)
     add_compile_options(/W4 /WX)
@@ -41,6 +93,12 @@ endif()
 
 # Include CMake modules
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(Validation)
+include(Doxygen)
+
+# Initialize validation framework
+libemb_detect_compiler()
+libemb_enable_compiler_validation()
 
 # Main library components
 add_subdirectory(include/libemb/hal)
@@ -64,10 +122,22 @@ if(LIBEMB_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
-# Print configuration summary
-message(STATUS "======== libemb Configuration ========")
-message(STATUS "Build tests: ${LIBEMB_BUILD_TESTS}")
-message(STATUS "Build examples: ${LIBEMB_BUILD_EXAMPLES}")
-message(STATUS "Enable ASAN: ${LIBEMB_ENABLE_ASAN}")
-message(STATUS "Cross-compiling: ${CMAKE_CROSSCOMPILING}")
-message(STATUS "CXX Standard: ${CMAKE_CXX_STANDARD}")
+# Benchmarks
+if(LIBEMB_BUILD_BENCHMARKS)
+    if(CMAKE_CROSSCOMPILING)
+        message(FATAL_ERROR "Benchmarks cannot be built for cross-compilation")
+    endif()
+    add_subdirectory(benchmark)
+endif()
+
+# Documentation with Doxygen
+if(LIBEMB_BUILD_DOCS)
+    libemb_add_doxygen_docs(
+        PROJECT_NAME "libemb"
+        PROJECT_VERSION "${PROJECT_VERSION}"
+        OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/docs"
+    )
+endif()
+
+# Print configuration summary (Phase 3 enhanced)
+libemb_print_validation_summary()

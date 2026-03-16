@@ -15,6 +15,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(LIBEMB_BUILD_TESTS "Build unit tests" OFF)
 option(LIBEMB_BUILD_EXAMPLES "Build example applications" OFF)
 option(LIBEMB_ENABLE_ASAN "Enable AddressSanitizer for host builds" OFF)
+option(LIBEMB_ENABLE_COVERAGE "Enable code coverage reporting (requires GCC/Clang)" OFF)
 
 # Detect cross-compilation
 if(CMAKE_CROSSCOMPILING)
@@ -30,6 +31,20 @@ if(LIBEMB_ENABLE_ASAN)
     add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
     add_link_options(-fsanitize=address)
     message(STATUS "AddressSanitizer enabled")
+endif()
+
+# Code coverage configuration
+if(LIBEMB_ENABLE_COVERAGE)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+        message(FATAL_ERROR "Code coverage requires GCC (not Clang)")
+    endif()
+    if(CMAKE_CROSSCOMPILING)
+        message(FATAL_ERROR "Code coverage not supported for cross-compilation")
+    endif()
+
+    add_compile_options(-fprofile-arcs -ftest-coverage)
+    add_link_options(--coverage)
+    message(STATUS "Code coverage enabled")
 endif()
 
 # Compiler-specific flags

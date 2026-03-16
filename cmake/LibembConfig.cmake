@@ -233,6 +233,23 @@ endmacro()
 
 
 #
+# enable_coverage_for_target(TARGET)
+#
+# Enable code coverage for a specific target (requires LIBEMB_ENABLE_COVERAGE)
+#
+# Arguments:
+#   TARGET: Target name to enable coverage for
+#
+function(enable_coverage_for_target TARGET)
+    if(LIBEMB_ENABLE_COVERAGE)
+        target_compile_options(${TARGET} PRIVATE
+            -fprofile-arcs -ftest-coverage --coverage)
+        target_link_options(${TARGET} PRIVATE --coverage)
+    endif()
+endfunction()
+
+
+#
 # print_libemb_summary()
 #
 # Print a summary of the libemb build configuration

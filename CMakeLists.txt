@@ -17,6 +17,7 @@ option(LIBEMB_BUILD_EXAMPLES "Build example applications" OFF)
 option(LIBEMB_BUILD_BENCHMARKS "Build performance benchmarks" OFF)
 option(LIBEMB_ENABLE_ASAN "Enable AddressSanitizer for host builds" OFF)
 option(LIBEMB_ENABLE_COVERAGE "Enable code coverage reporting (requires GCC/Clang)" OFF)
+option(LIBEMB_ENABLE_CLANG_TIDY "Enable clang-tidy static analysis" OFF)
 
 # Detect cross-compilation
 if(CMAKE_CROSSCOMPILING)
@@ -46,6 +47,24 @@ if(LIBEMB_ENABLE_COVERAGE)
     add_compile_options(-fprofile-arcs -ftest-coverage)
     add_link_options(--coverage)
     message(STATUS "Code coverage enabled")
+endif()
+
+# Clang-Tidy configuration
+if(LIBEMB_ENABLE_CLANG_TIDY)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(WARNING "Clang-Tidy works best with Clang compiler")
+    endif()
+    if(CMAKE_CROSSCOMPILING)
+        message(WARNING "Clang-Tidy may not work well with cross-compilation")
+    endif()
+
+    find_program(CLANG_TIDY_EXE clang-tidy)
+    if(CLANG_TIDY_EXE)
+        set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE};-checks=*,-fuchsia-*,-google-*,-llvm-*")
+        message(STATUS "Clang-Tidy enabled: ${CLANG_TIDY_EXE}")
+    else()
+        message(WARNING "clang-tidy not found - analysis disabled")
+    endif()
 endif()
 
 # Compiler-specific flags

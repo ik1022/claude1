@@ -5,12 +5,13 @@ add_library(libemb::driver ALIAS libemb_driver)
 
 target_sources(libemb_driver
     PRIVATE
-    Ssd1306.cpp
+    ssd1306/Ssd1306.cpp
     PUBLIC
     FILE_SET HEADERS
     BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/../../include
     FILES
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../include/libemb/driver/Ssd1306.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../include/libemb/driver/ssd1306/Ssd1306.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../include/libemb/driver/ssd1306/Ssd1306Types.hpp
 )
 
 target_include_directories(libemb_driver

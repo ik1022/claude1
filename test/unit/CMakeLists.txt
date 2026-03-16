@@ -25,6 +25,7 @@ macro(add_libemb_test TEST_NAME TEST_FILE)
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
 endmacro()
 
-# Register test files
-add_libemb_test(test_RingBuffer test_RingBuffer.cpp)
-add_libemb_test(test_Ssd1306 test_Ssd1306.cpp)
+# Add test subdirectories
+add_subdirectory(../fixtures fixtures)
+add_subdirectory(util)
+add_subdirectory(driver)

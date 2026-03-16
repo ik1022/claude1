@@ -5,6 +5,7 @@ add_library(libemb::port::mock ALIAS libemb_port_mock)
 
 target_include_directories(libemb_port_mock
     INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
     ${CMAKE_CURRENT_SOURCE_DIR}/../..
 )
 
@@ -18,6 +19,7 @@ target_sources(libemb_port_mock
     INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/MockGpio.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/MockUart.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/hal/MockI2c.hpp
 )
 
 # Set C++ standard

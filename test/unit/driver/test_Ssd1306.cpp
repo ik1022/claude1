@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include "libemb/driver/ssd1306/Ssd1306.hpp"
-#include "libemb/port/mock/hal/MockI2c.hpp"
+#include "port/mock/hal/MockI2c.hpp"
 
 using namespace libemb::driver;
 using namespace libemb::port::mock;

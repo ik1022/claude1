@@ -15,6 +15,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(LIBEMB_BUILD_TESTS "Build unit tests" OFF)
 option(LIBEMB_BUILD_EXAMPLES "Build example applications" OFF)
 option(LIBEMB_BUILD_BENCHMARKS "Build performance benchmarks" OFF)
+option(LIBEMB_BUILD_DOCS "Generate Doxygen documentation" OFF)
 option(LIBEMB_ENABLE_ASAN "Enable AddressSanitizer for host builds" OFF)
 option(LIBEMB_ENABLE_COVERAGE "Enable code coverage reporting (requires GCC/Clang)" OFF)
 option(LIBEMB_ENABLE_CLANG_TIDY "Enable clang-tidy static analysis" OFF)
@@ -76,6 +77,7 @@ endif()
 
 # Include CMake modules
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(Doxygen)
 
 # Main library components
 add_subdirectory(include/libemb/hal)
@@ -107,10 +109,20 @@ if(LIBEMB_BUILD_BENCHMARKS)
     add_subdirectory(benchmark)
 endif()
 
+# Documentation with Doxygen
+if(LIBEMB_BUILD_DOCS)
+    libemb_add_doxygen_docs(
+        PROJECT_NAME "libemb"
+        PROJECT_VERSION "${PROJECT_VERSION}"
+        OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/docs"
+    )
+endif()
+
 # Print configuration summary
 message(STATUS "======== libemb Configuration ========")
 message(STATUS "Build tests: ${LIBEMB_BUILD_TESTS}")
 message(STATUS "Build examples: ${LIBEMB_BUILD_EXAMPLES}")
+message(STATUS "Build documentation: ${LIBEMB_BUILD_DOCS}")
 message(STATUS "Enable ASAN: ${LIBEMB_ENABLE_ASAN}")
 message(STATUS "Cross-compiling: ${CMAKE_CROSSCOMPILING}")
 message(STATUS "CXX Standard: ${CMAKE_CXX_STANDARD}")

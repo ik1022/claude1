@@ -8,11 +8,45 @@ namespace libemb::util {
 /**
  * @brief 정적 할당을 사용하는 고정 크기 벡터
  *
- * 컴파일 타임 용량을 가지는 벡터 같은 인터페이스를 제공합니다.
- * 동적 할당 없음 - 임베디드 시스템에 적합합니다.
+ * std::vector를 임베디드 환경에 맞게 구현한 것입니다.
+ * 동적 메모리 할당이 없으므로 예측 가능한 성능을 보장합니다.
  *
- * @tparam T 요소 타입
- * @tparam N 최대 용량
+ * **특징:**
+ * - 표준 벡터와 유사한 인터페이스 (push_back, pop_back, operator[])
+ * - 컴파일 타임 크기 정의 (템플릿 매개변수)
+ * - 메모리 단편화 없음 (스택 할당)
+ * - 범위 기반 for 루프 지원
+ *
+ * **제약:**
+ * - 크기는 컴파일 타임에 정의됨 (변경 불가)
+ * - 선형 시간의 삽입/삭제 (중간 위치)
+ *
+ * @tparam T 요소 타입 (기본 타입, POD 타입 권장)
+ * @tparam N 최대 용량 (컴파일 타임 상수)
+ *
+ * @section example 예제:
+ * @code
+ * // 최대 10개 요소를 보관할 벡터
+ * libemb::util::StaticVector<int, 10> vec;
+ *
+ * // 요소 추가
+ * for (int i = 0; i < 5; i++) {
+ *     vec.push_back(i * 10);
+ * }
+ *
+ * // 요소 접근
+ * for (size_t i = 0; i < vec.size(); i++) {
+ *     printf("vec[%zu] = %d\n", i, vec[i]);
+ * }
+ *
+ * // 범위 기반 for 루프
+ * for (int val : vec) {
+ *     printf("Value: %d\n", val);
+ * }
+ *
+ * // 상태 확인
+ * printf("Size: %zu, Capacity: %zu\n", vec.size(), vec.capacity());
+ * @endcode
  */
 template<typename T, size_t N>
 class StaticVector {

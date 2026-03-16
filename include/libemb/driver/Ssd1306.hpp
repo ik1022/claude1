@@ -8,10 +8,70 @@
 namespace libemb::driver {
 
 /**
+ * @defgroup driver Drivers
+ * @brief 장치 드라이버 구현
+ * @{
+ */
+
+/**
  * @brief SSD1306 OLED 디스플레이 드라이버
  *
- * HAL 추상화를 사용하는 단색 128x64 I2C OLED 디스플레이 드라이버.
- * 동적 할당 없음 - 임베디드 시스템에 적합합니다.
+ * Solomon Systech SSD1306 컨트롤러를 사용하는 128x64 OLED 디스플레이 드라이버입니다.
+ *
+ * **특징:**
+ * - I2C 통신 (HAL 추상화 사용)
+ * - 단색 (흑백) 디스플레이 지원
+ * - 그래픽 그리기 함수 (픽셀, 선, 사각형)
+ * - 프레임 버퍼 기반 렌더링
+ * - 동적 메모리 할당 없음
+ *
+ * **하드웨어 요구사항:**
+ * - I2C 인터페이스
+ * - 전원: 3.3V 또는 5V (모듈에 따라 다름)
+ * - 기본 I2C 주소: 0x3C (또는 0x3D, 하드웨어 점퍼 설정)
+ *
+ * **사용 순서:**
+ * 1. @ref init() - 초기화
+ * 2. @ref clear() - 디스플레이 지우기 (선택사항)
+ * 3. 그래픽 함수로 프레임 버퍼 업데이트
+ * 4. @ref display() - 프레임 버퍼를 디스플레이에 전송
+ *
+ * @section example 사용 예제:
+ * @code
+ * // MockI2c를 사용한 테스트 예제
+ * auto i2c = std::make_unique<MockI2c>();
+ * auto display = std::make_unique<Ssd1306>();
+ *
+ * // 초기화
+ * if (!display->init(i2c.get(), 0x3C)) {
+ *     printf("Display initialization failed\n");
+ *     return;
+ * }
+ *
+ * // 화면 지우기
+ * display->clear();
+ *
+ * // 픽셀 그리기
+ * display->setPixel(10, 10, true);
+ * display->setPixel(11, 10, true);
+ * display->setPixel(12, 10, true);
+ *
+ * // 선 그리기
+ * display->drawHLine(0, 0, 128, true);  // 상단 가로선
+ * display->drawVLine(0, 0, 64, true);   // 좌측 세로선
+ *
+ * // 사각형 그리기
+ * display->drawRect(10, 10, 50, 30, true);
+ *
+ * // 화면에 표시
+ * display->display();
+ * @endcode
+ *
+ * @note 프레임 버퍼는 내부적으로 유지되므로, display()를 호출하기 전에
+ *       모든 그래픽 연산을 완료해야 합니다.
+ *
+ * @see libemb::hal::II2c
+ * @see libemb::driver (다른 드라이버들)
  */
 class Ssd1306 {
 public:

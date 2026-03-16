@@ -1,28 +1,25 @@
 # Driver implementations
 
-add_library(libemb_driver STATIC)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/LibembConfig.cmake)
+
+# Register individual drivers
+# add_libemb_driver() automatically:
+# - Collects .cpp from src/driver/<name>/
+# - Collects .hpp from include/libemb/driver/<name>/
+# - Links HAL and Util dependencies
+# - Applies common compiler flags
+add_libemb_driver(ssd1306)
+
+# Future drivers can be added as:
+# add_libemb_driver(bmp280)
+# add_libemb_driver(mpu6050)
+
+# Create aggregate library linking all drivers
+add_library(libemb_driver INTERFACE)
 add_library(libemb::driver ALIAS libemb_driver)
 
-target_sources(libemb_driver
-    PRIVATE
-    ssd1306/Ssd1306.cpp
-    PUBLIC
-    FILE_SET HEADERS
-    BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/../../include
-    FILES
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../include/libemb/driver/ssd1306/Ssd1306.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../include/libemb/driver/ssd1306/Ssd1306Types.hpp
+target_link_libraries(libemb_driver INTERFACE
+    libemb::driver::ssd1306
+    # libemb::driver::bmp280 (will be added as drivers are added)
+    # libemb::driver::mpu6050
 )
-
-target_include_directories(libemb_driver
-    PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../include
-)
-
-target_link_libraries(libemb_driver
-    PUBLIC
-    libemb::hal
-    libemb::util
-)
-
-target_compile_features(libemb_driver PRIVATE cxx_std_17)

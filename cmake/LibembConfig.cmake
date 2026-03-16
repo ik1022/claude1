@@ -28,8 +28,16 @@ macro(libemb_set_common_flags TARGET SCOPE)
             -ffunction-sections      # Each function in separate section
             -fdata-sections)         # Each data item in separate section
         target_link_options(${TARGET} ${SCOPE}
-            -flto
-            -Wl,--gc-sections)       # Remove unused sections
+            -flto)
+
+        # Remove unused sections (platform-specific)
+        if(NOT APPLE)
+            target_link_options(${TARGET} ${SCOPE}
+                -Wl,--gc-sections)   # GNU ld only
+        else()
+            target_link_options(${TARGET} ${SCOPE}
+                -Wl,-dead_strip)     # macOS linker
+        endif()
     endif()
 
     # AddressSanitizer for host builds

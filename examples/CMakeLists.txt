@@ -14,3 +14,8 @@ endif()
 if(NOT CMAKE_CROSSCOMPILING)
     add_subdirectory(03_display_driver)
 endif()
+
+# Sensor integration example - Multi-component system (host builds only)
+if(NOT CMAKE_CROSSCOMPILING)
+    add_subdirectory(04_sensor_integration)
+endif()

@@ -72,6 +72,34 @@ libemb 임베디드 라이브러리 공식 문서입니다.
 
 ---
 
+#### 종합 테스트 전략
+
+[**TESTING_STRATEGY.md**](./TESTING_STRATEGY.md)
+- 단위 테스트 작성 가이드
+- Google Test 프레임워크 사용법
+- 통합 테스트 설계
+- 코드 커버리지 측정 및 목표 설정
+- CI/CD 테스트 자동화
+- 테스트 패턴 및 best practices
+
+**대상**: 테스트 전략을 수립하고 품질을 높이는 개발자
+
+---
+
+#### 성능 최적화 가이드
+
+[**PERFORMANCE_GUIDE.md**](./PERFORMANCE_GUIDE.md)
+- 각 컴포넌트의 성능 특성
+- 컴파일러 최적화 레벨
+- 벤치마킹 방법론
+- 메모리 프로파일링 (ASAN, Valgrind)
+- 임베디드 최적화 기법
+- 실시간 성능 고려사항
+
+**대상**: 성능 병목을 식별하고 최적화하는 개발자
+
+---
+
 ## 🎓 학습 경로
 
 ### 입문자
@@ -80,13 +108,16 @@ libemb 임베디드 라이브러리 공식 문서입니다.
 2. [예제 01: RingBuffer](../examples/01_basic_ringbuffer/) - 기본 데이터 구조
 3. [예제 02: UART](../examples/02_uart_ringbuffer/) - 하드웨어 인터페이스
 4. [예제 03: Display Driver](../examples/03_display_driver/) - 드라이버 사용
+5. [예제 04: Sensor Integration](../examples/04_sensor_integration/) - 다중 컴포넌트 시스템
 
-### 중급자 (드라이버 개발)
+### 중급자 (드라이버 개발 & 테스트)
 
 1. [ARCHITECTURE.md](./ARCHITECTURE.md) - 전체 구조 이해
-2. [예제 코드](../examples/) - 실제 드라이버 분석
-3. [ADDING_DRIVERS.md](./ADDING_DRIVERS.md) - 새 드라이버 작성
-4. 새 드라이버 구현 및 테스트
+2. [TESTING_STRATEGY.md](./TESTING_STRATEGY.md) - 테스트 전략 학습
+3. [ADDING_MOCKS.md](./ADDING_MOCKS.md) - Mock 구현 이해
+4. [예제 코드](../examples/) - 실제 드라이버 분석
+5. [ADDING_DRIVERS.md](./ADDING_DRIVERS.md) - 새 드라이버 작성
+6. 새 드라이버 구현 및 테스트
 
 ### 고급자 (MCU 포팅)
 

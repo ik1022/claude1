@@ -19,3 +19,8 @@ endif()
 if(NOT CMAKE_CROSSCOMPILING)
     add_subdirectory(04_sensor_integration)
 endif()
+
+# ABOV A31G123 demo applications (cross-compilation only)
+if(CMAKE_CROSSCOMPILING)
+    add_subdirectory(05_abov_a31g123_demo)
+endif()

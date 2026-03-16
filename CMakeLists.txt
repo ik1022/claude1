@@ -14,6 +14,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Build options
 option(LIBEMB_BUILD_TESTS "Build unit tests" OFF)
 option(LIBEMB_BUILD_EXAMPLES "Build example applications" OFF)
+option(LIBEMB_BUILD_BENCHMARKS "Build performance benchmarks" OFF)
 option(LIBEMB_ENABLE_ASAN "Enable AddressSanitizer for host builds" OFF)
 option(LIBEMB_ENABLE_COVERAGE "Enable code coverage reporting (requires GCC/Clang)" OFF)
 
@@ -77,6 +78,14 @@ endif()
 # Examples
 if(LIBEMB_BUILD_EXAMPLES)
     add_subdirectory(examples)
+endif()
+
+# Benchmarks
+if(LIBEMB_BUILD_BENCHMARKS)
+    if(CMAKE_CROSSCOMPILING)
+        message(FATAL_ERROR "Benchmarks cannot be built for cross-compilation")
+    endif()
+    add_subdirectory(benchmark)
 endif()
 
 # Print configuration summary

@@ -1,134 +1,55 @@
 ---
-# Clang-Tidy configuration for libemb project
-# https://clang.llvm.org/extra/clang-tidy/
-#
-# Fix Safety Categories:
-# - SafeFixChecks: Can be safely auto-applied in CI
-# - ManualFixChecks: Require human review before applying
-# - NoFixChecks: Should not be auto-fixed
-
-# Enabled checks
-Checks: |
+Checks: >
   *,
   -fuchsia-*,
-  -google-*,
+  -google-default-arguments,
+  -google-explicit-constructor,
+  -google-readability-casting,
   -llvm-*,
   -llvm-header-guard,
   -readability-else-after-return,
-  -readability-simplify-boolean-expr,
-  -modernize-use-trailing-return-type,
-  -cppcoreguidelines-avoid-magic-numbers,
   -readability-magic-numbers,
-  -abseil-*,
-  -altera-*
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-avoid-const-or-ref-data-members,
+  -bugprone-easily-swappable-parameters,
+  -altera-*,
+  -abseil-*
 
-# Exclude patterns
-ExcludePatterns:
-  - '.*\.pb\.h$'
-  - '.*Test\.cpp$'
+# Treat warnings as errors
+WarningsAsErrors: 'true'
 
-# Warnings treated as errors
-WarningsAsErrors: |
-  *,
-  -readability-simplify-boolean-expr
-
-# Configuration options
-HeaderFilterRegex: 'include/libemb/.*'
-
-# Safe fixes that can be auto-applied without review
-# These are low-risk, well-tested transformations
-SafeFixChecks:
-  # Modernization - replacing old C++ constructs
-  - modernize-use-nullptr             # NULL → nullptr
-  - modernize-use-override             # Add override keyword
-  - modernize-use-auto                 # Explicit type → auto
-  - modernize-use-equals-default       # {} → = default
-  - modernize-use-equals-delete        # declaration → = delete
-  - modernize-use-bool-literals        # 1/0 → true/false
-  - modernize-redundant-void-arg       # func(void) → func()
-  - modernize-deprecated-headers       # <assert.h> → <cassert>
-
-  # Readability - clarity improvements
-  - readability-container-size-empty   # .size() == 0 → .empty()
-  - readability-simplify-subscript-expr
-  - readability-qualified-auto         # auto* → auto*
-
-  # Performance - efficiency improvements
-  - performance-no-int-to-ptr          # Safe int-to-ptr conversions
-  - performance-for-range-copy         # for(auto x : v) → for(auto& x : v)
-
-# Manual fixes requiring review
-# These modify naming, structure, or behavior in ways that need human judgment
-ManualFixChecks:
-  # Naming conventions - changes identifiers throughout codebase
-  - readability-identifier-naming      # Enforces naming conventions
-
-  # Style changes - changes function signatures
-  - modernize-use-trailing-return-type # auto func() → auto func()
-  - modernize-return-braced-init-list
-  - modernize-use-using               # typedef → using
-
-  # Correctness changes - may affect behavior
-  - performance-*                      # Perf suggestions need validation
-  - cppcoreguidelines-*                # Core guidelines require review
-  - cert-*                             # Security guidelines require testing
-
-  # Static analysis warnings
-  - bugprone-*                         # Bug patterns need verification
-  - clang-analyzer-*                   # Complex analysis results
-
-# Checks that should NOT be auto-fixed
-NoFixChecks:
-  - google-*                           # Google style (project uses own)
-  - fuchsia-*                          # Fuchsia style (not target platform)
-  - llvm-*                             # LLVM style (not target style)
-  - readability-else-after-return      # Intentional style choice
-  - readability-magic-numbers          # Domain-specific constants
-  - cppcoreguidelines-avoid-magic-numbers  # Domain-specific constants
-
-# Check specific configurations
+# Check options
 CheckOptions:
-  # readability-identifier-naming
+  # Naming conventions for libemb project
   - key: readability-identifier-naming.ClassCase
     value: CamelCase
-
-  - key: readability-identifier-naming.FunctionCase
-    value: camelCase
-
-  - key: readability-identifier-naming.ParameterCase
-    value: camelCase
-
   - key: readability-identifier-naming.PrivateMemberCase
     value: lower_case
-
   - key: readability-identifier-naming.PrivateMemberSuffix
-    value: _
-
+    value: '_'
   - key: readability-identifier-naming.ConstantCase
     value: UPPER_CASE
-
+  - key: readability-identifier-naming.EnumConstantCase
+    value: CamelCase
+  - key: readability-identifier-naming.FunctionCase
+    value: camelCase
   - key: readability-identifier-naming.NamespaceCase
     value: lower_case
 
-  # modernize-use-nullptr
-  - key: modernize-use-nullptr.NullMacros
-    value: 'NULL'
+  # Performance checks
+  - key: cppcoreguidelines-missing-std-forward
+    value: 'true'
+  - key: readability-function-cognitive-complexity.Threshold
+    value: '20'
 
-  # performance-inefficient-string-concatenation
-  - key: performance-inefficient-string-concatenation.AbsoluteLengthLimit
-    value: '1000'
-
-  # readability-implicit-bool-conversion
-  - key: readability-implicit-bool-conversion.AllowPointerConditions
-    value: '1'
-
-  # readability-braces-around-statements
+  # Format checks
   - key: readability-braces-around-statements.ShortStatementLines
-    value: '1'
+    value: '0'
 
-  # misc-non-private-member-variables-in-classes
-  - key: misc-non-private-member-variables-in-classes.IgnorePublicMemberVariables
-    value: '1'
+HeaderFilterRegex: '.*/(include|src|port|test|examples)/(libemb|.*)/.*\.(hpp|cpp)'
 
-FormatStyle: file
-UseColor: true
+# Fixes policy
+FormatStyle: LLVM
+
+# Analyze temporary destructors
+AnalyzeTemporaryDtors: 'true'

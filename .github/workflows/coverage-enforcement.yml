@@ -1,0 +1,200 @@
+name: Code Coverage Enforcement
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'include/**'
+      - 'src/**'
+      - 'port/**'
+      - 'test/**'
+      - '.github/workflows/coverage-enforcement.yml'
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+jobs:
+  coverage-analysis:
+    name: Coverage Analysis & Enforcement
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for comparison
+
+      - name: Set up environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            build-essential \
+            gcov \
+            lcov \
+            libgtest-dev
+
+      - name: Configure build with coverage
+        run: |
+          cmake -B build \
+            -DLIBEMB_BUILD_TESTS=ON \
+            -DLIBEMB_ENABLE_COVERAGE=ON \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_COMPILER=gcc \
+            -DCMAKE_CXX_FLAGS="-O0 -g -fprofile-arcs -ftest-coverage"
+
+      - name: Build
+        run: cmake --build build --parallel $(nproc)
+
+      - name: Run all tests
+        run: ctest --test-dir build --output-on-failure --parallel $(nproc)
+
+      - name: Generate coverage report
+        run: |
+          mkdir -p build/coverage
+          cd build
+          lcov --directory . --capture --output-file coverage/coverage.info
+          lcov --remove coverage/coverage.info \
+            '/usr/*' \
+            '*/test/*' \
+            '*/mock/*' \
+            '/opt/*' \
+            --output-file coverage/coverage.info
+          lcov --list coverage/coverage.info > coverage/summary.txt
+          genhtml coverage/coverage.info --output-directory coverage/html --title "libemb Coverage Report"
+
+      - name: Calculate coverage percentage
+        run: |
+          cd build/coverage
+          COVERAGE_PERCENT=$(lcov --summary coverage.info 2>&1 | grep "lines" | awk '{print $2}' | sed 's/%//')
+          echo "COVERAGE_PERCENT=${COVERAGE_PERCENT}" >> $GITHUB_ENV
+          echo "Coverage: ${COVERAGE_PERCENT}%"
+
+      - name: Check coverage threshold
+        run: |
+          THRESHOLD=${{ github.event.inputs.coverage_threshold || '80' }}
+          COVERAGE=${COVERAGE_PERCENT}
+
+          echo "Coverage Threshold: ${THRESHOLD}%"
+          echo "Current Coverage: ${COVERAGE}%"
+
+          if (( $(echo "$COVERAGE < $THRESHOLD" | bc -l) )); then
+            echo "❌ Coverage below threshold!"
+            exit 1
+          else
+            echo "✅ Coverage meets threshold!"
+          fi
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./build/coverage/coverage.info
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: true
+          verbose: true
+
+      - name: Compare with baseline (main branch)
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin main:main
+
+          # Create temporary comparison script
+          cat > compare_coverage.sh << 'EOF'
+          #!/bin/bash
+
+          # Get coverage from current branch
+          CURRENT=$(cat $1 | grep "lines" | awk '{print $2}' | sed 's/%//')
+
+          # Get coverage from main branch
+          BASELINE=$(cat $2 | grep "lines" | awk '{print $2}' | sed 's/%//')
+
+          DELTA=$(echo "$CURRENT - $BASELINE" | bc)
+
+          echo "## Coverage Comparison"
+          echo ""
+          echo "Main Branch: ${BASELINE}%"
+          echo "Current PR:  ${CURRENT}%"
+          echo "Change:      ${DELTA}%"
+
+          if (( $(echo "$DELTA < 0" | bc -l) )); then
+            echo "⚠️  Coverage decreased by ${DELTA}%"
+            exit 1
+          elif (( $(echo "$DELTA > 0" | bc -l) )); then
+            echo "✅ Coverage improved by ${DELTA}%"
+          else
+            echo "➡️  Coverage unchanged"
+          fi
+          EOF
+
+          chmod +x compare_coverage.sh
+          # Note: Detailed comparison requires baseline from main branch build
+
+      - name: Generate coverage badge
+        run: |
+          mkdir -p badges
+
+          # Create coverage badge
+          cat > badges/coverage.svg << EOF
+          <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="140" height="20">
+            <linearGradient id="b" x2="0" y2="100%">
+              <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
+              <stop offset="1" stop-opacity=".1"/>
+            </linearGradient>
+            <g font-family="DejaVu Sans,Verdana,Geneva,sans-serif" font-size="11">
+              <rect rx="3" width="140" height="20" fill="#555"/>
+              <rect x="74" y="0" rx="3" width="66" height="20" fill="#4c1"/>
+              <rect width="140" height="20" fill="url(#b)"/>
+              <text x="380" y="150" fill="#fff" fill-opacity=".8" text-anchor="end" text-rendering="geometricPrecision">coverage</text>
+              <text x="630" y="150" fill="#fff" fill-opacity=".8" text-anchor="end" text-rendering="geometricPrecision">${COVERAGE_PERCENT}%</text>
+            </g>
+          </svg>
+          EOF
+
+      - name: Upload coverage report to artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: build/coverage/
+          retention-days: 30
+
+      - name: Comment PR with coverage
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const coverage = ${{ env.COVERAGE_PERCENT }};
+            const threshold = 80;
+            const status = coverage >= threshold ? '✅' : '⚠️';
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `${status} **Code Coverage**: ${coverage}% (threshold: ${threshold}%)
+
+              [View detailed coverage report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+              `
+            });
+
+      - name: Generate coverage summary
+        if: always()
+        run: |
+          echo "## Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Coverage Percentage**: ${COVERAGE_PERCENT}%" >> $GITHUB_STEP_SUMMARY
+          echo "**Threshold**: 80%" >> $GITHUB_STEP_SUMMARY
+          echo "**Status**: $([ $(echo "${COVERAGE_PERCENT} >= 80" | bc) -eq 1 ] && echo '✅ PASS' || echo '❌ FAIL')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Details**:" >> $GITHUB_STEP_SUMMARY
+          echo "- Lines Covered: See detailed report in artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- Functions Covered: See detailed report in artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- Branches Covered: See detailed report in artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "[Download Coverage Report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY

@@ -17,8 +17,14 @@ option(LIBEMB_BUILD_EXAMPLES "Build example applications" OFF)
 option(LIBEMB_BUILD_BENCHMARKS "Build performance benchmarks" OFF)
 option(LIBEMB_BUILD_DOCS "Generate Doxygen documentation" OFF)
 option(LIBEMB_ENABLE_ASAN "Enable AddressSanitizer for host builds" OFF)
+option(LIBEMB_ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
 option(LIBEMB_ENABLE_COVERAGE "Enable code coverage reporting (requires GCC/Clang)" OFF)
 option(LIBEMB_ENABLE_CLANG_TIDY "Enable clang-tidy static analysis" OFF)
+
+# Validation options (Phase 3)
+option(LIBEMB_STRICT_COMPILER_FLAGS "Treat all warnings as errors" OFF)
+option(LIBEMB_ENABLE_EXTRA_WARNINGS "Enable extended compiler warnings" OFF)
+option(LIBEMB_COVERAGE_THRESHOLD "Minimum required code coverage percentage" 80)
 
 # Detect cross-compilation
 if(CMAKE_CROSSCOMPILING)
@@ -34,6 +40,16 @@ if(LIBEMB_ENABLE_ASAN)
     add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
     add_link_options(-fsanitize=address)
     message(STATUS "AddressSanitizer enabled")
+endif()
+
+# UndefinedBehaviorSanitizer configuration (Phase 3)
+if(LIBEMB_ENABLE_UBSAN)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        message(FATAL_ERROR "UndefinedBehaviorSanitizer requires Clang or GCC")
+    endif()
+    add_compile_options(-fsanitize=undefined)
+    add_link_options(-fsanitize=undefined)
+    message(STATUS "UndefinedBehaviorSanitizer enabled")
 endif()
 
 # Code coverage configuration
@@ -77,7 +93,12 @@ endif()
 
 # Include CMake modules
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(Validation)
 include(Doxygen)
+
+# Initialize validation framework
+libemb_detect_compiler()
+libemb_enable_compiler_validation()
 
 # Main library components
 add_subdirectory(include/libemb/hal)
@@ -118,11 +139,5 @@ if(LIBEMB_BUILD_DOCS)
     )
 endif()
 
-# Print configuration summary
-message(STATUS "======== libemb Configuration ========")
-message(STATUS "Build tests: ${LIBEMB_BUILD_TESTS}")
-message(STATUS "Build examples: ${LIBEMB_BUILD_EXAMPLES}")
-message(STATUS "Build documentation: ${LIBEMB_BUILD_DOCS}")
-message(STATUS "Enable ASAN: ${LIBEMB_ENABLE_ASAN}")
-message(STATUS "Cross-compiling: ${CMAKE_CROSSCOMPILING}")
-message(STATUS "CXX Standard: ${CMAKE_CXX_STANDARD}")
+# Print configuration summary (Phase 3 enhanced)
+libemb_print_validation_summary()

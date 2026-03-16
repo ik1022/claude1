@@ -1,0 +1,264 @@
+name: Multi-Compiler Validation
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - feature/**
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+concurrency:
+  group: "multi-compiler-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  gcc-validation:
+    name: GCC Validation (Strict)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up build environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            gcc \
+            g++ \
+            libgtest-dev \
+            gcov
+
+      - name: Cache CMake build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/build/gcc
+            ~/.cache/ccache
+          key: ${{ runner.os }}-gcc-${{ hashFiles('**/CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-gcc-
+
+      - name: Configure (Strict Mode)
+        run: |
+          cmake -B build/gcc \
+            -DCMAKE_CXX_COMPILER=g++ \
+            -DLIBEMB_BUILD_TESTS=ON \
+            -DLIBEMB_BUILD_EXAMPLES=ON \
+            -DLIBEMB_STRICT_COMPILER_FLAGS=ON \
+            -DLIBEMB_ENABLE_EXTRA_WARNINGS=ON \
+            -DLIBEMB_ENABLE_ASAN=ON \
+            -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: |
+          cmake --build build/gcc --parallel $(nproc) --verbose
+
+      - name: Run Tests
+        run: |
+          ctest --test-dir build/gcc --output-on-failure --parallel $(nproc)
+
+      - name: Generate Compiler Diagnostics (on failure)
+        if: failure()
+        run: |
+          echo "GCC Version:"
+          g++ --version
+          echo ""
+          echo "Build directory:"
+          ls -la build/gcc/
+          echo ""
+          echo "Recent build output (last 100 lines):"
+          tail -100 build/gcc/CMakeFiles/CMakeBuildLog.log || true
+
+  clang-validation:
+    name: Clang Validation + Static Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up build environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            clang \
+            clang-tidy \
+            clang-tools \
+            libgtest-dev
+
+      - name: Cache CMake build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/build/clang
+            ~/.cache/ccache
+          key: ${{ runner.os }}-clang-${{ hashFiles('**/CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-clang-
+
+      - name: Configure (Strict Mode)
+        run: |
+          cmake -B build/clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DLIBEMB_BUILD_TESTS=ON \
+            -DLIBEMB_BUILD_EXAMPLES=ON \
+            -DLIBEMB_STRICT_COMPILER_FLAGS=ON \
+            -DLIBEMB_ENABLE_EXTRA_WARNINGS=ON \
+            -DLIBEMB_ENABLE_CLANG_TIDY=ON \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: |
+          cmake --build build/clang --parallel $(nproc) --verbose
+
+      - name: Run Tests
+        run: |
+          ctest --test-dir build/clang --output-on-failure --parallel $(nproc)
+
+      - name: Extract Clang-Tidy Warnings
+        if: always()
+        run: |
+          echo "## Clang-Tidy Results" >> $GITHUB_STEP_SUMMARY
+          if [ -f build/clang/clang-tidy-report.txt ]; then
+            echo "✓ Clang-Tidy analysis completed" >> $GITHUB_STEP_SUMMARY
+            head -50 build/clang/clang-tidy-report.txt >> $GITHUB_STEP_SUMMARY
+          else
+            echo "ℹ No clang-tidy warnings" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  msvc-validation:
+    name: MSVC Validation (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Cache CMake build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/build/msvc
+          key: ${{ runner.os }}-msvc-${{ hashFiles('**/CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-msvc-
+
+      - name: Configure (Strict Mode)
+        run: |
+          cmake -B build/msvc `
+            -DLIBEMB_BUILD_TESTS=ON `
+            -DLIBEMB_BUILD_EXAMPLES=ON `
+            -DLIBEMB_STRICT_COMPILER_FLAGS=ON `
+            -DLIBEMB_ENABLE_EXTRA_WARNINGS=ON `
+            -DCMAKE_BUILD_TYPE=Release `
+            -G "Visual Studio 17 2022"
+
+      - name: Build
+        run: |
+          cmake --build build/msvc --parallel --verbose --config Release
+
+      - name: Run Tests
+        run: |
+          ctest --test-dir build/msvc --output-on-failure --parallel
+
+      - name: Generate MSVC Diagnostics (on failure)
+        if: failure()
+        run: |
+          echo "MSVC Info:" >> $env:GITHUB_STEP_SUMMARY
+          cl.exe >> $env:GITHUB_STEP_SUMMARY 2>&1
+
+  cross-compile-validation:
+    name: ARM Cross-Compilation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up ARM toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            arm-none-eabi-gcc \
+            arm-none-eabi-g++ \
+            arm-none-eabi-binutils
+
+      - name: Cache CMake build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/build/stm32
+          key: ${{ runner.os }}-arm-${{ hashFiles('**/CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-arm-
+
+      - name: Configure (STM32F4 + Strict)
+        run: |
+          cmake -B build/stm32 \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/arm-none-eabi.cmake \
+            -DLIBEMB_STRICT_COMPILER_FLAGS=ON \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: |
+          cmake --build build/stm32 --parallel $(nproc) --verbose
+
+      - name: Analyze Binary Size
+        run: |
+          echo "## Binary Size Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Embedded libraries created:" >> $GITHUB_STEP_SUMMARY
+          find build/stm32 -name "*.a" -exec arm-none-eabi-size {} \; >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Memory optimization enabled (LTO + GC sections)" >> $GITHUB_STEP_SUMMARY
+
+  validation-summary:
+    name: Validation Summary
+    needs: [gcc-validation, clang-validation, msvc-validation, cross-compile-validation]
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check all validations passed
+        run: |
+          if [ "${{ needs.gcc-validation.result }}" == "failure" ] || \
+             [ "${{ needs.clang-validation.result }}" == "failure" ] || \
+             [ "${{ needs.msvc-validation.result }}" == "failure" ] || \
+             [ "${{ needs.cross-compile-validation.result }}" == "failure" ]; then
+            echo "❌ Some validations failed"
+            exit 1
+          fi
+          echo "✅ All validations passed!"
+
+      - name: Create summary
+        if: always()
+        run: |
+          echo "## Multi-Compiler Validation Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Compiler | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| GCC (Linux) | ${{ needs.gcc-validation.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Clang (Linux) | ${{ needs.clang-validation.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| MSVC (Windows) | ${{ needs.msvc-validation.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ARM Cross-Compile | ${{ needs.cross-compile-validation.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Validation Features:" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Strict compiler flags enabled (-Werror, etc.)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ AddressSanitizer (ASAN) on GCC" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Clang-Tidy static analysis on Clang" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ MSVC strict conformance (/permissive-)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ ARM embedded binary optimization" >> $GITHUB_STEP_SUMMARY

@@ -39,6 +39,36 @@ macro(libemb_set_common_flags TARGET SCOPE)
         target_link_options(${TARGET} ${SCOPE}
             -fsanitize=address)
     endif()
+
+    # UndefinedBehaviorSanitizer (Phase 3)
+    if(LIBEMB_ENABLE_UBSAN AND NOT CMAKE_CROSSCOMPILING)
+        target_compile_options(${TARGET} ${SCOPE}
+            -fsanitize=undefined)
+        target_link_options(${TARGET} ${SCOPE}
+            -fsanitize=undefined)
+    endif()
+endmacro()
+
+
+#
+# libemb_apply_strict_validation(TARGET SCOPE [EXTRA_WARNINGS])
+#
+# Apply strict compiler validation flags to a target (Phase 3)
+# This is called automatically if LIBEMB_STRICT_COMPILER_FLAGS is enabled
+#
+# Arguments:
+#   TARGET: Target name
+#   SCOPE:  PUBLIC, PRIVATE, or INTERFACE
+#   EXTRA_WARNINGS: Optional - enable extended warning checks
+#
+macro(libemb_apply_strict_validation TARGET SCOPE)
+    if(LIBEMB_STRICT_COMPILER_FLAGS)
+        libemb_apply_strict_flags(${TARGET} ${SCOPE})
+    endif()
+
+    if(LIBEMB_ENABLE_EXTRA_WARNINGS)
+        libemb_apply_extra_warnings(${TARGET} ${SCOPE})
+    endif()
 endmacro()
 
 
@@ -97,6 +127,10 @@ macro(add_libemb_driver DRIVER_NAME)
 
     # Apply common flags
     libemb_set_common_flags(${DRIVER_LIB_NAME} PUBLIC)
+
+    # Apply strict validation (Phase 3)
+    libemb_apply_strict_validation(${DRIVER_LIB_NAME} PUBLIC)
+
     target_compile_features(${DRIVER_LIB_NAME} PUBLIC cxx_std_17)
 
     # Base dependencies (all drivers depend on HAL and Util)
@@ -158,6 +192,10 @@ macro(add_libemb_test TEST_NAME TEST_FILE)
 
     # Apply common flags
     libemb_set_common_flags(${TEST_NAME} PRIVATE)
+
+    # Apply strict validation (Phase 3)
+    libemb_apply_strict_validation(${TEST_NAME} PRIVATE)
+
     target_compile_features(${TEST_NAME} PRIVATE cxx_std_17)
 
     # Register with CTest
@@ -201,6 +239,10 @@ macro(add_libemb_example EXAMPLE_NAME MAIN_FILE)
 
     # Apply common flags
     libemb_set_common_flags(${EXAMPLE_NAME} PRIVATE)
+
+    # Apply strict validation (Phase 3)
+    libemb_apply_strict_validation(${EXAMPLE_NAME} PRIVATE)
+
     target_compile_features(${EXAMPLE_NAME} PRIVATE cxx_std_17)
 
     # Base dependencies

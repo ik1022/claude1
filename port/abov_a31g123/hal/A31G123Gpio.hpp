@@ -8,7 +8,8 @@
 
 #pragma once
 
-#include "libemb/hal/IGpio.hpp"
+#include <cstdint>
+#include "../../include/libemb/hal/IGpio.hpp"
 
 namespace libemb::port::abov_a31g123 {
 

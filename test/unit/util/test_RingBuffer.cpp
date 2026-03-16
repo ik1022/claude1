@@ -21,7 +21,7 @@ TEST_F(RingBufferUint8Test, PushAndPop) {
     EXPECT_EQ(buffer.size(), 1);
     EXPECT_FALSE(buffer.empty());
 
-    uint8_t value;
+    uint8_t value = 0;
     EXPECT_TRUE(buffer.pop(value));
     EXPECT_EQ(value, 42);
     EXPECT_TRUE(buffer.empty());
@@ -29,7 +29,7 @@ TEST_F(RingBufferUint8Test, PushAndPop) {
 
 TEST_F(RingBufferUint8Test, PopFromEmpty) {
     // 비어있는 버퍼에서 제거 시도
-    uint8_t value;
+    uint8_t value = 0;
     EXPECT_FALSE(buffer.pop(value));
 }
 
@@ -45,7 +45,7 @@ TEST_F(RingBufferUint8Test, FillAndEmpty) {
     EXPECT_FALSE(buffer.push(99));
 
     // 모든 요소 제거
-    uint8_t value;
+    uint8_t value = 0;
     for (int i = 0; i < 8; ++i) {
         EXPECT_TRUE(buffer.pop(value));
         EXPECT_EQ(value, i);
@@ -122,7 +122,7 @@ TEST_F(RingBufferIntTest, SignedIntegers) {
     EXPECT_TRUE(buffer.push(100));
     EXPECT_TRUE(buffer.push(-999));
 
-    int value;
+    int value = 0;
     EXPECT_TRUE(buffer.pop(value));
     EXPECT_EQ(value, -10);
     EXPECT_TRUE(buffer.pop(value));

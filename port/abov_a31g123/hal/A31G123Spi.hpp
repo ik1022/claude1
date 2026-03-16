@@ -4,8 +4,9 @@
  */
 
 #pragma once
+#include <cstdint>
 
-#include "libemb/hal/ISpi.hpp"
+#include "../../include/libemb/hal/ISpi.hpp"
 
 namespace libemb::port::abov_a31g123 {
 

@@ -112,8 +112,10 @@ if(NOT CMAKE_CROSSCOMPILING)
 endif()
 
 # MCU-Specific Ports
-# ABOV A31G123 (Phase 4)
-add_subdirectory(port/abov_a31g123)
+# ABOV A31G123 (Phase 4) - Only for cross-compilation
+if(CMAKE_CROSSCOMPILING)
+    add_subdirectory(port/abov_a31g123)
+endif()
 
 # Tests
 if(LIBEMB_BUILD_TESTS)

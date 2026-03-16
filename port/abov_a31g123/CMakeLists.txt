@@ -34,6 +34,8 @@ target_include_directories(libemb_port_abov_a31g123
     PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/..
+    INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../include
 )
 
 # ============================================================================

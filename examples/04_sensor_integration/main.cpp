@@ -18,7 +18,7 @@
 
 #include "libemb/util/RingBuffer.hpp"
 #include "libemb/driver/Ssd1306.hpp"
-#include "port/mock/MockI2c.hpp"
+#include "port/mock/hal/MockI2c.hpp"
 #include "port/mock/MockGpio.hpp"
 
 using std::cout;

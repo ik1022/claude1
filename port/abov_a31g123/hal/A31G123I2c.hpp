@@ -4,8 +4,9 @@
  */
 
 #pragma once
+#include <cstdint>
 
-#include "libemb/hal/II2c.hpp"
+#include "../../include/libemb/hal/II2c.hpp"
 
 namespace libemb::port::abov_a31g123 {
 

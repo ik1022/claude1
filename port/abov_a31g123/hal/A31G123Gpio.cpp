@@ -21,7 +21,7 @@ void A31G123Gpio::setMode(libemb::hal::GpioMode mode) {
 
 void A31G123Gpio::write(libemb::hal::GpioState state) {
     // Cast to GPIO structure
-    GPIO_Type* gpio = gpio_from_base(port_);
+    auto gpio = gpio_from_base(port_);
 
     // Write to DOUT register
     if (state == libemb::hal::GpioState::HIGH) {
@@ -35,26 +35,25 @@ void A31G123Gpio::write(libemb::hal::GpioState state) {
 
 libemb::hal::GpioState A31G123Gpio::read() const {
     // Cast to GPIO structure
-    GPIO_Type* gpio = gpio_from_base(port_);
+    auto gpio = gpio_from_base(port_);
 
     // Read from DIN register (input data)
     if (gpio->DIN & pin_mask()) {
         return libemb::hal::GpioState::HIGH;
-    } else {
-        return libemb::hal::GpioState::LOW;
     }
+    return libemb::hal::GpioState::LOW;
 }
 
 void A31G123Gpio::toggle() {
     // Cast to GPIO structure
-    GPIO_Type* gpio = gpio_from_base(port_);
+    auto gpio = gpio_from_base(port_);
 
     // Write to TOGGLE register (XORs the bit)
     gpio->TOGGLE = pin_mask();
 }
 
 void A31G123Gpio::apply_mode(libemb::hal::GpioMode mode) {
-    GPIO_Type* gpio = gpio_from_base(port_);
+    auto gpio = gpio_from_base(port_);
 
     // Clear existing mode bits for this pin (2 bits per pin)
     uint32_t shift = pin_ * 2;
@@ -95,7 +94,7 @@ void A31G123Gpio::apply_mode(libemb::hal::GpioMode mode) {
 }
 
 void A31G123Gpio::configure_pull(bool pull_up) {
-    GPIO_Type* gpio = gpio_from_base(port_);
+    auto gpio = gpio_from_base(port_);
 
     if (pull_up) {
         // Enable pull-up
@@ -111,7 +110,7 @@ void A31G123Gpio::configure_pull(bool pull_up) {
 }
 
 void A31G123Gpio::set_analog_mode(bool enable) {
-    GPIO_Type* gpio = gpio_from_base(port_);
+    auto gpio = gpio_from_base(port_);
 
     if (enable) {
         // Enable analog mode in ADCSEL

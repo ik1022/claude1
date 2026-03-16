@@ -4,9 +4,10 @@
  */
 
 #pragma once
+#include <cstdint>
 
-#include "libemb/hal/IUart.hpp"
-#include "libemb/util/RingBuffer.hpp"
+#include "../../include/libemb/hal/IUart.hpp"
+#include "../../include/libemb/util/RingBuffer.hpp"
 
 namespace libemb::port::abov_a31g123 {
 

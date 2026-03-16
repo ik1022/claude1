@@ -222,29 +222,29 @@ struct SYSCFG_Type {
 /**
  * @brief Get GPIO port from base address
  */
-inline GPIO_Type* gpio_from_base(volatile uint32_t* base) {
-    return reinterpret_cast<GPIO_Type*>(base);
+inline volatile GPIO_Type* gpio_from_base(volatile uint32_t* base) {
+    return reinterpret_cast<volatile GPIO_Type*>(base);
 }
 
 /**
  * @brief Get UART port from base address
  */
-inline UART_Type* uart_from_base(volatile uint32_t* base) {
-    return reinterpret_cast<UART_Type*>(base);
+inline volatile UART_Type* uart_from_base(volatile uint32_t* base) {
+    return reinterpret_cast<volatile UART_Type*>(base);
 }
 
 /**
  * @brief Get I2C port from base address
  */
-inline I2C_Type* i2c_from_base(volatile uint32_t* base) {
-    return reinterpret_cast<I2C_Type*>(base);
+inline volatile I2C_Type* i2c_from_base(volatile uint32_t* base) {
+    return reinterpret_cast<volatile I2C_Type*>(base);
 }
 
 /**
  * @brief Get SPI port from base address
  */
-inline SPI_Type* spi_from_base(volatile uint32_t* base) {
-    return reinterpret_cast<SPI_Type*>(base);
+inline volatile SPI_Type* spi_from_base(volatile uint32_t* base) {
+    return reinterpret_cast<volatile SPI_Type*>(base);
 }
 
 /**
